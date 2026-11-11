@@ -1,0 +1,5 @@
+/target
+**/*.rs.bk
+.DS_Store
+# observation scratch output (keep curated results under specs/)
+/obs-out/
