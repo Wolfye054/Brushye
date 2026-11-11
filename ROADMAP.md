@@ -1,0 +1,93 @@
+# ROADMAP
+
+Milestones from an empty repo to the alpha, then .sut import, .clip import and beyond.
+Each milestone ends with a report (works / doesn't / specs waiting on observation / next step).
+Ordering follows CLAUDE.md's priorities: command layer → brush engine → .sut → .clip.
+
+## Phase 1 — Study & planning (this milestone)
+- Wine/Xvfb observation harness for CSP 1.13.2 (done; see `docs/observation/wine-harness.md`).
+- Manual study, FEATURES.md, ROADMAP.md, first behaviour specs, format study plan.
+- DECISIONS.md proposals: crate layout, command format, determinism, undo, native format.
+- Repo skeleton + CI on Windows/macOS/Linux.
+- **Exit:** maintainer approves or amends the proposals.
+
+## M1 — Tablet input spike (top technical risk)
+- Standalone `brushye-tablet` crate + a tiny egui test app that logs `InputSample`s
+  (position, pressure, tilt, rotation, eraser end, timestamps) and draws a pressure trace.
+- Try winit pen events first, then native backends (Windows Ink/Wintab, macOS NSEvent,
+  Linux XInput2/Wayland tablet-v2).
+- The maintainer tests with a real pen on every OS available.
+- In parallel (needs maintainer): decide whether to set up the Xorg + libinput + uinput
+  virtual stylus (D-003). If it works, pressure specs can be automated.
+- **Exit:** pressure + tilt + eraser end confirmed on ≥ 2 OSes; a written risk report for the rest.
+
+## M2 — Document model + command layer core (headless)
+- `brushye-core`: document, layer tree (raster + paper), tiles, ids.
+- `brushye-command`: text codec (parse/print round-trip, fuzzed), versioning + migration
+  framework, executor, queries, session journal.
+- Commands: `doc.new`, `layer.new/delete/move/set` (name, visibility, opacity, blend),
+  `history.undo/redo`, and the matching queries.
+- `brushye-cli`: `run`, `replay`, `query`.
+- **Exit:** a journal replays to an identical document hash on all 3 CI OSes.
+
+## M3 — CPU reference compositor
+- `brushye-color`: all 28 blend modes, opacity, straight-alpha compositing, paper.
+- **Exact-match tests** against the observed CSP tables in `specs/behavior/blending/`.
+- PNG export (`brushye-format`), `brushye render doc out.png`.
+- **Exit:** every *observed* blend spec passes bit-exactly. Modes whose formula is still
+  open use LUTs (D-017).
+
+## M4 — Brush engine v1 (headless)
+- Input processing, stabilization, dynamics + curves, round tip (hardness, AA levels,
+  thickness, angle), spacing, density, opacity, ink combine Normal / Compare density / Erase.
+- `stroke` command with the encoded sample stream. Strokes are deterministic and replayable.
+- Reference-image tests against observed CSP strokes (mouse-driven specs, automated),
+  plus pressure specs once the maintainer has recorded them.
+- **Exit:** brush specs at status *observed* have passing tests; open differences are listed.
+
+## M5 — Undo/redo + native format
+- Tile copy-on-write undo, history as commands.
+- `.brsh` save/load (D-014) with round-trip tests. User brush definitions saved in Brushye format.
+- **Exit:** save → load → replay gives the same hash; undo/redo fuzz tests pass.
+
+## M6 — App shell + GPU canvas
+- eframe window, wgpu canvas renderer (tiles as textures), pan/zoom/rotate.
+- GPU vs CPU tolerance tests (D-012) on a software adapter in CI.
+- Tablet input wired to `stroke` commands. Live stroke preview.
+- Layer palette, colour wheel/sliders, tool property palette, brush size palette.
+- **Exit:** the maintainer draws comfortably with pressure on their main OS.
+
+## M7 — Brush editor + alpha polish → **ALPHA**
+- Brush editor (Sub Tool Detail equivalent) for all alpha brush settings; create, duplicate
+  and save brushes; a set of original default brushes.
+- Every alpha feature reachable headless via commands; the CLI documents every command.
+- Release builds for Windows/macOS/Linux from CI.
+- **Alpha checklist** (from CLAUDE.md): canvas pan/zoom/rotate + pressure ✓, raster layers
+  with blend modes + opacity ✓, undo/redo on commands ✓, brush engine + editor + own brush
+  format ✓, .brsh + PNG export ✓, everything headless ✓.
+
+## M8 — .sut import (first post-alpha milestone)
+- Format study from maintainer-made samples (`specs/formats/study-plan.md`).
+- Map .sut settings to Brushye brush settings; report anything that can't be mapped.
+- Import only at runtime from user-supplied files; nothing bundled.
+- **Exit:** every sample in the .sut sample set imports, and strokes made with imported brushes
+  match CSP strokes from the same brush within brush-test tolerance.
+
+## M9 — MCP server + scripting polish
+- `brushye-mcp` exposing commands and queries; script examples; journal viewer.
+
+## M10 — Post-alpha painting features
+- Folders + Through mode, clipping, masks, locks, selections, fill, gradient, transform,
+  colour mixing (Blend/Running/Smear), texture, spray, dual brush, starting/ending,
+  watercolor edge, PSD import/export, workspace/shortcut customization.
+
+## M11 — .clip import
+- Container/structure study from maintainer samples; raster layers, folders, blend modes,
+  opacity, masks first; vector/text/3D later (or flattened fallback where CSP stores a
+  rendered cache).
+- **Exit:** the sample .clip set opens with matching flattened output.
+
+## Beyond
+- .clip save, vector layers, text/balloons, frame borders, tones, comics page management,
+  animation, rulers/perspective, tonal correction layers, colour management/CMYK,
+  Auto Actions on the command journal, plugin/script hosting.

@@ -1,0 +1,228 @@
+# DECISIONS
+
+Each entry: date, decision, alternatives considered, reason.
+Entries marked **PROPOSAL** are awaiting maintainer approval. No application code
+gets written against a proposal until it's marked **ACCEPTED**.
+
+---
+
+## D-001 Observation prefix is a reflink clone of the maintainer's CSP prefix — ACCEPTED (operational)
+- **Date:** 2026-11-11
+- **Decision:** Automated observation runs CSP 1.13.2 from `~/.wine-csp-observe`, a btrfs reflink
+  copy (`cp -a --reflink`) of the maintainer's own `~/.wine-csp`. It runs in Xvfb `:77` inside a
+  1920×1080 Wine virtual desktop (`wine explorer /desktop=csp,1920x1080`) and uses the cspenguin
+  Wine 11.4 build already on the machine.
+- **Alternatives:** Drive the maintainer's real prefix (rejected: observation changes tool settings,
+  workspace and recent files in their daily install). Fresh install from the CELSYS installer
+  (no installer on the machine; licence activation would be needed again).
+- **Reason:** Isolation from the maintainer's daily settings at zero disk cost. Copying is a
+  mechanical file copy; nothing inside the installation is read, as the clean-room rules require.
+  The prefix's `drive_c/users/<user>/Documents` and the `z:` drive still map to the real home
+  directory, so all exports go to an explicit scratch path.
+- **Reversible:** `rm -rf ~/.wine-csp-observe`.
+
+## D-002 Exported PNG is a bit-exact pixel oracle — ACCEPTED (verified)
+- **Date:** 2026-11-11
+- **Decision:** Observations read exact values from File > Export (Single Layer) > .png with
+  Expression color = "RGB color" and preview off. CSP embeds an sRGB2014 ICC profile, but the RGB
+  values round-trip bit-exactly (open PNG → export → compare: identical on all 131,072 pixels).
+  The ICC chunk is stripped before observation data is committed.
+- **Alternatives:** Screenshots (forbidden for pixel values by CLAUDE.md, and colour-managed/zoomed).
+
+## D-003 Virtual tablet pressure under Wine: not available in this setup — ACCEPTED (finding)
+- **Date:** 2026-11-11
+- **Finding:** Xvfb exposes only core and XTEST pointers with relative X/Y valuators, with no
+  pressure or tilt axis, so Wine's wintab has nothing to report. A uinput virtual stylus wouldn't
+  help: Xvfb has no evdev/libinput input path, and the `/dev/input/event*` nodes uinput creates are
+  `root:input 0660`.
+- **Not done on purpose:** creating a uinput tablet device. The maintainer's live KDE session
+  would hot-plug it as a real tablet.
+- **Paths that could work (need maintainer action, see ROADMAP M1):**
+  1. Install `xorg-x11-server-Xorg`, `xorg-x11-drv-dummy` and `xorg-x11-drv-libinput`, plus a
+     udev rule that gives the user access only to a uinput device with a fixed name. Then run
+     Xorg with the dummy video driver, `AutoAddDevices off` and an InputClass matching only that
+     device. Wine's wintab then sees a real XInput2 stylus with pressure and tilt valuators.
+  2. A headless Wayland compositor (e.g. weston/cage headless) that forwards a virtual
+     `zwp_tablet_v2` to Xwayland. More moving parts.
+- **Consequence:** pressure/tilt specs are marked `needs: maintainer + real pen` until one of the
+  paths above is proven to work.
+
+---
+
+## D-010 Workspace / crate layout — PROPOSAL
+- **Date:** 2026-11-11
+- **Proposal:** a cargo workspace under `crates/`. Nothing below the UI line depends on egui,
+  wgpu, winit or any OS API, and everything below it builds and tests headless on all three
+  platforms.
+
+```
+crates/
+  brushye-core       document model: Document, Canvas, LayerTree, Layer kinds, Tile storage,
+                     Selection, ids. Pure data + invariants, no I/O.
+  brushye-color      pixel types, colour conversions, blend-mode math (integer, LUT-verified
+                     against observed CSP data), compositing of tiles. no_std-friendly.
+  brushye-brush      brush engine: input sample processing, stabilization, dynamics/curves,
+                     dab generation, dab rasterization into a stroke buffer, ink combine.
+  brushye-render     CPU *reference* renderer: layer tree → flattened image. Defines correct output.
+  brushye-command    command definitions, text codec (parse/print), versioning + migrations,
+                     executor, undo/redo, session journal, queries.
+  brushye-format     .brsh native format (read/write), PNG export/import. Later: PSD, ORA.
+  brushye-sut        .sut import (post-alpha). Runs only on user-supplied files.
+  brushye-clip       .clip import (later).
+  brushye-gpu        wgpu canvas renderer, tested against brushye-render within stated tolerance.
+  brushye-tablet     cross-platform pen input → `InputSample` stream (pressure, tilt, rotation,
+                     eraser end, timestamps). Platform backends behind cfg.
+  brushye-app        egui/eframe UI. A client of brushye-command only.
+  brushye-cli        headless binary: `brushye run script.bcmd`, `brushye replay journal`,
+                     `brushye query …`, `brushye render doc.brsh out.png`.
+  brushye-mcp        MCP server (stdio) exposing commands and queries.
+xtask/               dev tasks: update reference images, run observation-data checks.
+```
+
+  Dependency direction: `core ← color ← brush ← render ← command ← format ← {cli, mcp, app}`.
+  `gpu`, `tablet` and `app` are the only crates allowed to touch the GPU or OS input APIs.
+- **Alternatives:** (a) one big `brushye` crate with modules: faster to start, but it gets
+  harder to enforce "no UI deps in core" and slower to compile. (b) Merging `color` into
+  `render`: blending math is reused by the brush engine (ink combine modes) and by the GPU
+  shaders' test oracle, so it earns its own crate.
+- **Reason:** CLAUDE.md requires a headless, testable core and a single command layer that every
+  client goes through. Crate boundaries make that a compile-time guarantee.
+- **Open question for maintainer:** split `brushye-tablet` into its own repo-level spike first
+  (ROADMAP M1)? I recommend yes. It's the top technical risk.
+
+## D-011 Command format — PROPOSAL
+- **Date:** 2026-11-11
+- **Proposal:** a line-oriented text format, one command per line, UTF-8.
+
+```
+#brushye-journal v1 app=0.1.0
+@1 doc.new w=1600 h=1200 dpi=350 paper=#ffffff
+@2 layer.new id=L2 kind=raster name="Ink" above=L1
+@3 layer.set L2 blend=multiply opacity=0.80
+@4 tool.set brush.size=12.5 brush.aa=middle ink.mode=normal color=#1a1a1aff
+@5 stroke L2 tool=@current seed=91827 samples=b64:AAEC…
+@6 history.undo
+```
+
+  - **Grammar:** `@<seq> <namespace>.<verb>[/<cmdver>] <positional>* <key>=<value>*`.
+    Values are typed: integers, decimals (canonical shortest round-trip form, `f32`/`f64` as
+    declared per field), `#rrggbb[aa]`, quoted strings with `\` escapes, ids (`L2`, `S5`),
+    enums (bare words), and `b64:` blobs. Unknown keys are an error, not ignored.
+  - **Versioning:** each command type has an integer version (`layer.set/2`). A missing
+    `/n` means v1. The journal header carries the format version and app version. On load,
+    old commands go through a chain of pure migration functions (`vN → vN+1`), each with
+    golden tests. Printing always emits the current version.
+  - **Determinism:** commands carry every input that affects output, including the random
+    seed, the full tool state snapshot (or a reference to a prior `tool.set` in the same
+    journal), and ids. Ids are assigned by the command, never by the executor, so replay can't
+    diverge.
+  - **Strokes:** `stroke` carries the full raw input stream as a `b64:` blob, so a journal line
+    stays one line. The blob holds a little-endian header (sample count, field mask, units)
+    followed by delta-encoded, zigzag + LEB128 varint samples:
+    `x,y` in 1/256 px (canvas space, i32), `pressure` u16 (0..65535), `tilt_x,tilt_y` i16
+    (1/100 °), `rotation` u16 (1/100 °), `t` in µs since stroke start (u32), and flags (eraser,
+    button). Raw device samples are stored **before** stabilization, so changing the stabilizer
+    replays differently on purpose and the journal stays the truth. Fields that aren't present
+    are omitted through the field mask (a mouse stroke has no pressure). A readable
+    alternative `samples=[x,y,p,t;…]` is accepted for hand-written scripts and tests.
+  - **Queries** use the same syntax with a `?` prefix (`?layer.list`, `?pixel L2 x=10 y=20`,
+    `?tool.get brush.size`) and return JSON. They never change state and never go into the
+    journal.
+  - **Equivalent JSON form:** every command maps one-to-one to a JSON object
+    (`{"cmd":"layer.set","v":1,"args":{…}}`) for the MCP server and scripting hosts. The
+    text form is canonical in journals.
+- **Alternatives:** (a) JSON Lines as the canonical form: unambiguous, but noisy for
+  humans and roughly 3× larger. (b) A binary journal (e.g. postcard): compact, but not a
+  "string" and painful to diff or hand-write. (c) Lua/JS script as the journal: Turing-complete
+  scripts are hard to migrate and can't be inspected statically.
+- **Reason:** readable, diffable, greppable journals; strict parsing; compact strokes (a typical
+  2-second stroke at 200 Hz is roughly 2–4 KB of base64); and migrations make old journals
+  replayable forever.
+
+## D-012 Determinism strategy (CPU reference vs GPU tolerance) — PROPOSAL
+- **Date:** 2026-11-11
+- **Proposal:**
+  1. **Pixel storage:** layers are stored as 8-bit straight (non-premultiplied) RGBA in
+     256×256 tiles. Compositing converts alpha to 15-bit fixed point (0..32768), the
+     precision CSP observably uses (L-002). This matches what CSP 1.13.2 exposes: an 8-bit "Color" canvas whose
+     compositing results are reproduced exactly by integer formulas (see
+     `specs/behavior/blending/layer-blend-modes-opaque.md`). Strokes accumulate in a
+     higher-precision stroke buffer (u16 or f32, decided by the brush specs) and are combined
+     into the layer once, using the ink combine mode.
+  2. **The CPU reference renderer (`brushye-render`) defines correct output.** Compositing and
+     blend modes use integer arithmetic only, so they're bit-identical on every platform.
+     Brush geometry uses `f32` with these rules: no `mul_add`/FMA, no platform `libm`
+     (use the pure-Rust `libm` crate), no SIMD paths whose results differ from scalar, a fixed
+     tile iteration order, and per-tile parallelism only where tiles are independent. Random
+     numbers come from a seeded, portable PRNG (e.g. PCG32) whose seed is stored in the command.
+  3. **Cross-platform test:** CI renders the same journals on Windows, macOS and Linux and
+     compares hashes of the CPU output. Any difference fails the build.
+  4. **GPU renderer tolerance:** the wgpu path is tested against the CPU reference on the
+     same journals. Proposed thresholds: compositing ≤ 1/255 per channel on ≥ 99.9 % of pixels
+     and never > 2/255; brush dabs ≤ 2/255 on ≥ 99 % and never > 4/255. Tolerances are
+     enforced in CI with a software adapter (lavapipe/WARP), plus a manual run on real GPUs
+     before release. Saving and export **always** use the CPU result, so files never depend
+     on the GPU.
+  5. **CSP-matching tests:** observed CSP outputs (exported PNGs) are stored under `specs/`
+     and the tests use them directly (e.g. the 256×256 per-mode tables).
+- **Alternatives:** (a) GPU as the source of truth, with no CPU renderer: fast, but output
+  differs across vendors and drivers, so replay can't be verified. (b) f32 linear-light
+  compositing everywhere: doesn't match CSP, which observably blends 8-bit sRGB values with
+  integer rounding. (c) 16-bit storage: possible later as a document option. Kept out of the
+  alpha because CSP 1.13.2 has no such canvas mode to match.
+- **Reason:** CLAUDE.md requires replay to reproduce the document, with a CPU reference
+  and a stated GPU tolerance. Integer compositing makes the CSP-matching tests exact.
+
+## D-013 Undo/redo design — PROPOSAL
+- **Proposal:** undo is built on commands. Each executed command produces an *inverse delta*:
+  copy-on-write tile snapshots for pixel changes, and old-value records for property changes.
+  `history.undo` / `history.redo` are themselves commands in the journal, so replay
+  reproduces the exact history state. History depth is bounded by memory (configurable),
+  not by a fixed step count.
+- **Alternatives:** recompute by replaying from the last checkpoint (simple, but slow for
+  long sessions); pure inverse commands (hard to get right for brush strokes).
+
+## D-014 Native format `.brsh` — PROPOSAL
+- **Proposal:** a ZIP container (stored/deflate):
+  `manifest.json` (format version, app version), `document.json` (layer tree, properties,
+  ids), `tiles/<layer>/<tx>_<ty>.png` for non-empty tiles only, `thumbnail.png`, an optional
+  `journal.bcmd`, and `brushes/*.brshbrush` (user brushes are a JSON brush definition plus
+  tip/texture PNGs). The format is versioned and has forward migration.
+- **Alternatives:** an SQLite container (good for big docs and incremental save; revisit
+  after the alpha), or a custom binary format.
+- **Reason:** easy to inspect, robust tooling everywhere, and the same container style as
+  ORA, which makes ORA export trivial later.
+
+## D-015 Tablet input approach — PROPOSAL
+- **Proposal:** a `brushye-tablet` crate that produces a uniform `InputSample` stream.
+  First check whether current winit pen/pointer events deliver pressure, tilt and the eraser
+  end on all three OSes. Where they don't, add native backends: Windows Ink (`WM_POINTER`)
+  with Wintab as an option, macOS `NSEvent` tablet events, and Linux XInput2 (X11) plus
+  `zwp_tablet_v2` (Wayland). This is validated with a standalone spike app in **M1, before
+  the canvas work**.
+- **Reason:** CLAUDE.md names tablet input as the top technical risk.
+
+## D-016 Proposed dependencies (each still needs approval when introduced)
+| Crate | Use | Why |
+|---|---|---|
+| `eframe`/`egui`, `wgpu` | UI, canvas | Mandated by CLAUDE.md |
+| `serde`, `serde_json` | document.json, query results, JSON command form | De facto standard; derives avoid hand-written codecs |
+| `png` | PNG I/O | Pure Rust, gives exact control over chunks (needed to strip/write ICC deterministically) |
+| `zip` | .brsh container | Pure Rust, mature |
+| `base64` | stroke blobs | Small and standard |
+| `libm` | deterministic transcendental functions | Platform libm differs between OSes (D-012) |
+| `rand_pcg` (or a hand-written PCG32) | seeded jitter | Portable and reproducible |
+| `thiserror` | error types in library crates | Removes boilerplate, no runtime cost |
+| `rmcp` | MCP server | Official Rust MCP SDK |
+| `insta` (dev) | golden tests for codec/migrations | Snapshot review workflow |
+
+## D-017 Blend-mode implementation strategy — PROPOSAL
+- **Proposal:** implement each separable mode as the integer formula that reproduces the
+  observed CSP table exactly where one is known (19 of 22 separable modes so far, plus the
+  15-bit source-alpha step for 27 of 28 modes; see specs L-001/L-002). Where no
+  closed form is known yet (Overlay/Hard light upper half, Vivid light), ship the observed
+  256×256 table (64 KiB per mode) as the implementation, with a test that asserts equality,
+  and keep looking for the formula. Non-separable modes (Hue, Saturation, Color,
+  Brightness, Darker/Lighter color) start from the W3C formulas with .30/.59/.11 weights
+  (closest match, ≤ 8/255 off) until further observation pins them down.
+- **Reason:** exact CSP parity now, without guessing internals.
