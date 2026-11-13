@@ -326,6 +326,22 @@ impl Session {
                     .ok_or(DocError::NoSuchLayer(p.layer))?,
             ),
             Query::DocHash(_) => Json::String(format!("{:016x}", self.doc()?.content_hash())),
+            Query::Pixel(p) => {
+                let d = self.doc()?;
+                in_canvas(d, p.x, p.y)?;
+                // Renders the whole document; fine for queries, the app renders incrementally.
+                let img = brushye_core::render::flatten(d);
+                json!(img.pixel(p.x, p.y))
+            }
+            Query::LayerPixel(p) => {
+                let d = self.doc()?;
+                in_canvas(d, p.x, p.y)?;
+                json!(
+                    d.layer(p.layer)
+                        .ok_or(DocError::NoSuchLayer(p.layer))?
+                        .pixel(p.x, p.y)
+                )
+            }
         })
     }
 
@@ -431,6 +447,59 @@ impl Session {
     }
 }
 
+fn in_canvas(d: &Document, x: u32, y: u32) -> Result<(), ExecError> {
+    if x < d.width && y < d.height {
+        Ok(())
+    } else {
+        Err(ExecError(format!(
+            "({x}, {y}) is outside the {}×{} canvas",
+            d.width, d.height
+        )))
+    }
+}
+
+/// Write pixels honouring the layer's locks (lock transparent pixels keeps alpha, spec L-006).
+fn write_pixels(
+    d: &mut Document,
+    id: LayerId,
+    x: i64,
+    y: i64,
+    w: u32,
+    h: u32,
+    rgba: &[u8],
+) -> Result<(), ExecError> {
+    let bounds = (d.width, d.height);
+    let l = d.layer_mut(id)?;
+    if l.locked {
+        return Err(DocError::LayerLocked(id).into());
+    }
+    if l.lock_alpha {
+        let mut kept = rgba.to_vec();
+        for row in 0..h {
+            for col in 0..w {
+                let (cx, cy) = (x + i64::from(col), y + i64::from(row));
+                let i = ((row * w + col) * 4) as usize;
+                let old =
+                    if cx >= 0 && cy >= 0 && cx < i64::from(bounds.0) && cy < i64::from(bounds.1) {
+                        l.pixel(cx as u32, cy as u32)
+                    } else {
+                        [0; 4]
+                    };
+                // Keep alpha; fully transparent pixels stay exactly as they were.
+                if old[3] == 0 {
+                    kept[i..i + 4].copy_from_slice(&old);
+                } else {
+                    kept[i + 3] = old[3];
+                }
+            }
+        }
+        l.put_pixels(bounds, x, y, w, h, &kept);
+    } else {
+        l.put_pixels(bounds, x, y, w, h, rgba);
+    }
+    Ok(())
+}
+
 fn layer_json(l: &Layer) -> Json {
     json!({
         "id": l.id.to_string(),
@@ -510,6 +579,28 @@ fn edit(d: &mut Document, cmd: &Command) -> Result<(), ExecError> {
             if let Some(v) = p.lock_alpha {
                 l.lock_alpha = v;
             }
+        }
+        Command::LayerFill(p) => {
+            let (w, h) = (d.width, d.height);
+            let block: Vec<u8> = p
+                .color
+                .0
+                .iter()
+                .copied()
+                .cycle()
+                .take(w as usize * h as usize * 4)
+                .collect();
+            write_pixels(d, p.layer, 0, 0, w, h, &block)?;
+        }
+        Command::LayerPixels(p) => {
+            let need = u64::from(p.w) * u64::from(p.h) * 4;
+            if p.data.0.len() as u64 != need {
+                return Err(ExecError(format!(
+                    "layer.pixels: data has {} bytes, w*h*4 = {need}",
+                    p.data.0.len()
+                )));
+            }
+            write_pixels(d, p.layer, p.x, p.y, p.w, p.h, &p.data.0)?;
         }
         _ => {
             return Err(ExecError(format!(

@@ -165,6 +165,75 @@ fn locked_layers_reject_edits_except_unlocking() {
 }
 
 #[test]
+fn pixels_fill_queries_and_undo() {
+    let mut s = Session::new();
+    // 2x1 block: opaque red, half-transparent blue.
+    run(
+        &mut s,
+        "doc.new 4 4 paper=#ffffff\nlayer.new L1\nlayer.pixels L1 x=1 y=2 w=2 h=1 data=b64:/wAA/wAA/4A=\n",
+    );
+    assert_eq!(
+        q(&mut s, "?layer.pixel L1 x=1 y=2"),
+        serde_json::json!([255, 0, 0, 255])
+    );
+    assert_eq!(
+        q(&mut s, "?layer.pixel L1 x=2 y=2"),
+        serde_json::json!([0, 0, 255, 128])
+    );
+    assert_eq!(
+        q(&mut s, "?layer.pixel L1 x=0 y=0"),
+        serde_json::json!([0, 0, 0, 0])
+    );
+    // Rendered over white paper: 15-bit lerp (L-002) of white towards blue at alpha 128.
+    assert_eq!(
+        q(&mut s, "?pixel x=2 y=2"),
+        serde_json::json!([127, 127, 255, 255])
+    );
+    run(
+        &mut s,
+        "layer.set L1 blend=multiply\nlayer.fill L1 color=#808080\n",
+    );
+    assert_eq!(
+        q(&mut s, "?pixel x=0 y=0"),
+        serde_json::json!([128, 128, 128, 255])
+    );
+    run(&mut s, "history.undo\n");
+    assert_eq!(
+        q(&mut s, "?layer.pixel L1 x=0 y=0"),
+        serde_json::json!([0, 0, 0, 0])
+    );
+    assert!(s.run_line("?pixel x=4 y=0").is_err());
+    assert!(
+        s.run_line("layer.pixels L1 x=0 y=0 w=2 h=2 data=b64:AAAA")
+            .is_err()
+    ); // wrong size
+}
+
+#[test]
+fn locks_apply_to_pixel_writes() {
+    let mut s = Session::new();
+    run(
+        &mut s,
+        "doc.new 2 1 paper=none\nlayer.new L1\nlayer.pixels L1 x=0 y=0 w=1 h=1 data=b64:AQIDQA==\n",
+    );
+    run(
+        &mut s,
+        "layer.set L1 lock_alpha=true\nlayer.fill L1 color=#ff0000\n",
+    );
+    // Alpha kept (0x40 and 0): only existing coverage gets the new colour (L-006).
+    assert_eq!(
+        q(&mut s, "?layer.pixel L1 x=0 y=0"),
+        serde_json::json!([255, 0, 0, 64])
+    );
+    assert_eq!(
+        q(&mut s, "?layer.pixel L1 x=1 y=0"),
+        serde_json::json!([0, 0, 0, 0])
+    );
+    run(&mut s, "layer.set L1 locked=true\n");
+    assert!(s.run_line("layer.fill L1 color=#00ff00").is_err());
+}
+
+#[test]
 fn undo_limit_drops_oldest_steps() {
     let mut s = Session::new();
     s.set_undo_limit(2);
@@ -334,6 +403,28 @@ mod roundtrip {
                 .prop_map(|(layer, visible)| Command::LayerShow(LayerShow { layer, visible })),
             id().prop_map(|layer| Command::LayerSelect(LayerSelect { layer })),
             Just(Command::HistoryUndo(HistoryUndo {})),
+            (id(), any::<[u8; 4]>()).prop_map(|(layer, c)| Command::LayerFill(LayerFill {
+                layer,
+                color: Rgba8(c)
+            })),
+            (
+                id(),
+                -300i64..300,
+                -300i64..300,
+                0u32..4,
+                0u32..4,
+                proptest::collection::vec(any::<u8>(), 0..64)
+            )
+                .prop_map(|(layer, x, y, w, h, data)| Command::LayerPixels(
+                    LayerPixels {
+                        layer,
+                        x,
+                        y,
+                        w,
+                        h,
+                        data: brushye_command::params::Blob(data)
+                    }
+                )),
         ]
     }
 

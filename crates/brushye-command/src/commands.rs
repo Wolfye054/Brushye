@@ -5,7 +5,7 @@ use brushye_core::{BlendMode, LayerId, LayerKind, Rgba8};
 use serde_json::{Value as Json, json};
 
 use crate::params;
-use crate::params::{Arg, JsonReader, Mode, ParamSpec, Reader};
+use crate::params::{Arg, Blob, JsonReader, Mode, ParamSpec, Reader};
 use crate::syntax::{RawLine, Value};
 
 /// How a command interacts with history (D-013, spec H-001).
@@ -148,6 +148,24 @@ params! {
     }
 }
 params! {
+    /// Fill a layer's whole canvas area with one colour.
+    pub struct LayerFill {
+        layer: LayerId = pos "Target layer",
+        color: Rgba8 = key "Fill colour #rrggbb or #rrggbbaa (straight alpha)",
+    }
+}
+params! {
+    /// Write a block of raw straight-RGBA8 pixels into a layer.
+    pub struct LayerPixels {
+        layer: LayerId = pos "Target layer",
+        x: i64 = key "Left edge in canvas pixels",
+        y: i64 = key "Top edge in canvas pixels",
+        w: u32 = key "Block width",
+        h: u32 = key "Block height",
+        data: Blob = key "w*h*4 bytes, row-major RGBA",
+    }
+}
+params! {
     /// Show or hide a layer (journaled, not undoable, as in CSP — spec H-001).
     pub struct LayerShow {
         layer: LayerId = pos "Target layer",
@@ -181,6 +199,21 @@ params! {
     /// One layer's properties.
     pub struct QLayerGet {
         layer: LayerId = pos "Layer",
+    }
+}
+params! {
+    /// Flattened (rendered) pixel at canvas coordinates.
+    pub struct QPixel {
+        x: u32 = key "x",
+        y: u32 = key "y",
+    }
+}
+params! {
+    /// A layer's own pixel at canvas coordinates.
+    pub struct QLayerPixel {
+        layer: LayerId = pos "Layer",
+        x: u32 = key "x",
+        y: u32 = key "y",
     }
 }
 params! {
@@ -306,6 +339,8 @@ registry! {
         LayerDelete(LayerDelete) = "layer.delete" v 1 Undoable "Delete a layer",
         LayerMove(LayerMove) = "layer.move" v 1 Undoable "Move a layer above another layer, or to the top or bottom",
         LayerSet(LayerSet) = "layer.set" v 1 Undoable "Set layer properties (name, opacity, blend, locks)",
+        LayerFill(LayerFill) = "layer.fill" v 1 Undoable "Fill a layer with one colour",
+        LayerPixels(LayerPixels) = "layer.pixels" v 1 Undoable "Write raw RGBA pixels into a layer",
         LayerShow(LayerShow) = "layer.show" v 1 AppState "Show or hide a layer (not undoable, as in CSP)",
         LayerSelect(LayerSelect) = "layer.select" v 1 AppState "Make a layer the active layer",
         HistoryUndo(HistoryUndo) = "history.undo" v 1 History "Undo one step",
@@ -316,6 +351,8 @@ registry! {
         LayerList(QLayerList) = "layer.list" "All layers, bottom to top",
         LayerGet(QLayerGet) = "layer.get" "One layer's properties",
         DocHash(QDocHash) = "doc.hash" "Deterministic content hash of the document (hex)",
+        Pixel(QPixel) = "pixel" "Rendered pixel at x, y (RGBA)",
+        LayerPixel(QLayerPixel) = "layer.pixel" "A layer's own pixel at x, y (RGBA)",
         History(QHistory) = "history" "Undo history: step labels and current position",
         Commands(QCommands) = "commands" "Command and query registry with parameter schemas",
     }

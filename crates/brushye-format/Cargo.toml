@@ -1,0 +1,15 @@
+[package]
+name = "brushye-format"
+description = "Brushye file formats: PNG export/import now; .brsh native format in M5 (DECISIONS D-014)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+brushye-core = { path = "../brushye-core" }
+png = "0.18"

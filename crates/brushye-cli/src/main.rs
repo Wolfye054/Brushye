@@ -1,8 +1,9 @@
 //! `brushye` — headless Brushye (DECISIONS D-010/D-011).
 //!
 //! ```text
-//! brushye run SCRIPT [--journal OUT]      run a script (- = stdin); print query results as JSON lines
+//! brushye run SCRIPT [--journal OUT] [--png OUT]   run a script (- = stdin); print query results as JSON lines
 //! brushye replay JOURNAL [--query Q]...   replay a journal, then answer queries
+//! brushye render JOURNAL OUT.png          replay a journal and export the flattened image
 //! brushye commands                        print the command/query registry (JSON)
 //! brushye --version
 //! ```
@@ -17,8 +18,10 @@ use std::process::ExitCode;
 use brushye_command::Session;
 
 const USAGE: &str = "usage:
-  brushye run SCRIPT [--journal OUT]      run a script (- = stdin); query results print as JSON lines
+  brushye run SCRIPT [--journal OUT] [--png OUT]
+                                          run a script (- = stdin); query results print as JSON lines
   brushye replay JOURNAL [--query Q]...   replay a journal, then answer queries (e.g. --query '?doc.hash')
+  brushye render JOURNAL OUT.png          replay a journal and export the flattened image as PNG
   brushye commands                        print the command/query registry
   brushye --version";
 
@@ -32,6 +35,16 @@ fn read_input(path: &str) -> Result<String, String> {
     } else {
         std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))
     }
+}
+
+/// Flatten the session's current document and write it as PNG.
+fn export_png(s: &Session, out: &str) -> Result<(), Fail> {
+    let doc = s
+        .document()
+        .ok_or_else(|| Fail::Run("no document to render (run doc.new first)".into()))?;
+    let img = brushye_command::core::render::flatten(&doc);
+    let bytes = brushye_format::png_io::png_bytes(&img).map_err(|e| Fail::Run(e.to_string()))?;
+    std::fs::write(out, bytes).map_err(|e| Fail::Run(format!("{out}: {e}")))
 }
 
 fn print_json(j: &serde_json::Value) {
@@ -67,6 +80,7 @@ fn real_main(args: &[String]) -> Result<(), Fail> {
         Some("run") => {
             let mut path = None;
             let mut journal = None;
+            let mut png = None;
             let mut it = args[1..].iter();
             while let Some(a) = it.next() {
                 match a.as_str() {
@@ -74,6 +88,13 @@ fn real_main(args: &[String]) -> Result<(), Fail> {
                         journal = Some(
                             it.next()
                                 .ok_or_else(|| usage("--journal needs a file"))?
+                                .clone(),
+                        )
+                    }
+                    "--png" => {
+                        png = Some(
+                            it.next()
+                                .ok_or_else(|| usage("--png needs a file"))?
                                 .clone(),
                         )
                     }
@@ -94,6 +115,9 @@ fn real_main(args: &[String]) -> Result<(), Fail> {
             if let Some(out) = journal {
                 std::fs::write(&out, s.journal_text())
                     .map_err(|e| Fail::Run(format!("{out}: {e}")))?;
+            }
+            if let Some(out) = png {
+                export_png(&s, &out)?;
             }
             Ok(())
         }
@@ -129,6 +153,15 @@ fn real_main(args: &[String]) -> Result<(), Fail> {
                 }
             }
             Ok(())
+        }
+        Some("render") => {
+            let (Some(path), Some(out), None) = (args.get(1), args.get(2), args.get(3)) else {
+                return Err(usage("render needs JOURNAL and OUT.png"));
+            };
+            let text = read_input(path).map_err(Fail::Run)?;
+            let s = Session::replay(&text)
+                .map_err(|e| Fail::Run(format!("{path}:{}: {}", e.line, e.msg)))?;
+            export_png(&s, out)
         }
         Some(other) => Err(usage(&format!("unknown subcommand '{other}'"))),
     }

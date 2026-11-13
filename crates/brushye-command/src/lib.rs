@@ -10,5 +10,7 @@ pub mod exec;
 pub mod params;
 pub mod syntax;
 
+/// The document model, for reading the immutable versions a `Session` hands out.
+pub use brushye_core as core;
 pub use commands::{Command, Query};
 pub use exec::{ExecError, LineError, Session};

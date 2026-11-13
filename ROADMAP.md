@@ -35,7 +35,8 @@ Ordering follows CLAUDE.md's priorities: command layer → brush engine → .sut
 - `brushye-cli`: `run`, `replay`, `query`.
 - **Exit:** a journal replays to an identical document hash on all 3 CI OSes.
 
-## M3 — CPU reference compositor
+## M3 — CPU reference compositor — DONE (2026-11-13)
+- Report: `docs/reports/M3-cpu-compositor.md`.
 - **Before M3 (D-017):** run the remaining blending observations (non-separable sweeps,
   Multiply with alpha, L-003 opacity, L-004 folders/Through, L-005 transparent backdrop,
   L-006 clipping/lock) so the compositor is built against observed behaviour.

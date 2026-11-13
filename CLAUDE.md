@@ -109,7 +109,7 @@ command layer. Nothing changes state outside it.
 - `crates/`: Rust workspace. Layout per DECISIONS D-010 (accepted): brushye-core, brushye-command,
   brushye-format, brushye-app, brushye-cli, plus brushye-tablet (M1). Only brushye-app and
   brushye-tablet may use UI/GPU/OS-input crates. Crates are created as their milestone starts
-  (now: brushye-core, brushye-command, brushye-cli, brushye-tablet).
+  (now: brushye-core, brushye-command, brushye-format, brushye-cli, brushye-tablet).
 - `docs/command-format.md`: the exact command text grammar (D-011).
 - `docs/reports/`: milestone reports.
 
@@ -118,7 +118,8 @@ Phase 1 (study & planning) is done, and all Phase 1 proposals (D-010 to D-017: c
 command format, determinism, undo/redo, .brsh format, tablet input, dependencies, blend-mode
 strategy) are ACCEPTED. M1 (tablet spike) is done on Linux; Windows/macOS backends are deferred
 (no test hardware). Pre-M3 blending observations are done (L-003..L-007). M2 (document model +
-command layer) is done, verified on all three CI platforms. Next: M3 (CPU compositor). New architectural decisions still
+command layer) is done, verified on all three CI platforms. M3 (CPU compositor, exact against
+the observed blend data) is done. Next: M4 (brush engine). New architectural decisions still
 need maintainer approval first (see Working agreement). Never copy code from the maintainer's
 other projects (photocraft, clipcraft); design ideas only.
 

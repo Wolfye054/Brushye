@@ -195,6 +195,7 @@ name = "brushye-cli"
 version = "0.0.0"
 dependencies = [
  "brushye-command",
+ "brushye-format",
  "serde_json",
 ]
 
@@ -212,6 +213,14 @@ dependencies = [
 name = "brushye-core"
 version = "0.0.0"
 dependencies = [
+ "png",
+]
+
+[[package]]
+name = "brushye-format"
+version = "0.0.0"
+dependencies = [
+ "brushye-core",
  "png",
 ]
 

@@ -77,3 +77,33 @@ fn commands_lists_the_registry() {
         .unwrap_or_default();
     assert!(names.contains(&"layer.set") && names.contains(&"history.undo"));
 }
+
+#[test]
+fn render_exports_the_flattened_image() {
+    let dir = std::env::temp_dir().join(format!("brushye-cli-render-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("{e}"));
+    let (journal, png_run, png_render) = (
+        dir.join("j.bcmd"),
+        dir.join("run.png"),
+        dir.join("render.png"),
+    );
+    // White paper, a 50 % gray Multiply layer at 50 % opacity.
+    let script = "doc.new 3 2 paper=#ffffff\nlayer.new L1\nlayer.fill L1 color=#808080\nlayer.set L1 blend=multiply opacity=50\n";
+    let s = |p: &std::path::Path| p.to_str().unwrap_or("").to_owned();
+    let (code, _, err) = brushye(
+        &["run", "-", "--journal", &s(&journal), "--png", &s(&png_run)],
+        Some(script),
+    );
+    assert_eq!(code, 0, "{err}");
+    let (code, _, err) = brushye(&["render", &s(&journal), &s(&png_render)], None);
+    assert_eq!(code, 0, "{err}");
+    let a = std::fs::read(&png_run).unwrap_or_default();
+    let b = std::fs::read(&png_render).unwrap_or_default();
+    assert_eq!(a, b, "run --png and render must write identical bytes");
+    let img = brushye_format::png_io::read_png(&a).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!((img.width, img.height), (3, 2));
+    // Multiply(255, 128) = 128; opacity 50 % → o8 = 127, ae8 = (255·128) >> 8 = 127,
+    // a15 = 16320; 15-bit lerp from 255 to 128 → 192 (L-002/L-003).
+    assert_eq!(img.pixel(0, 0), [192, 192, 192, 255]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
