@@ -16,7 +16,8 @@ CSP's installed files, settings or databases.
 | Exporting | File > Export (Single Layer) > .png works; settings persist between exports |
 | Exported pixels are exact | Open PNG → export → **bit-identical RGB** on 131,072 px; alpha 255 (D-002) |
 | Batch observation | 56 blend-mode exports scripted end to end without failures |
-| Virtual tablet pressure | **Not available.** Xvfb has no pressure-capable XInput device; see D-003 |
+| Virtual tablet pressure (Xvfb) | **Not available.** Xvfb has no pressure-capable XInput device; see D-003 |
+| Virtual tablet pressure (Xorg :78, 2026-11-13) | Pressure reaches CSP. With the evdev driver, pen-up draws a stray segment to (0,0); the fix is pending a udev rule change (D-003 update) |
 
 ## Launch
 ```bash
@@ -66,6 +67,14 @@ These depend on the workspace layout. Recheck with a screenshot if the layout ch
 - The export dialog remembers the last folder and settings ("RGB color", preview off).
 - Exported PNGs carry an sRGB2014 iCCP chunk. Pixel values are unaffected; it's stripped
   before data goes into the repo.
+
+## Pen-capable display (D-003)
+`tools/observe/start_pen_display.sh WORKDIR [78]` starts `vpen.py` (uinput stylus "Brushye Virtual
+Pen"), a rootless Xorg using `xorg-pen.conf.in` (dummy video, auto-add off, only that device),
+and CSP. Pen commands go to `WORKDIR/fifo` (`in`, `move X Y P TX TY`, `down`, `up`, `out`,
+`wait MS`). XTEST (xdrive.py) still works on the same display for menus and keys.
+Pitfall: never `pkill -f 'Xorg :78'`, because it matches the calling shell's command line too.
+Anchor it: `pkill -f '^/usr/libexec/Xorg :78'`.
 
 ## Getting pressure later (D-003)
 See DECISIONS D-003 for the two options (Xorg dummy + libinput + uinput stylus with a udev rule,

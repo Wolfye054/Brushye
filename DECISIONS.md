@@ -46,6 +46,23 @@ gets written against a proposal until it's marked **ACCEPTED**.
      `zwp_tablet_v2` to Xwayland. More moving parts.
 - **Consequence:** pressure/tilt specs are marked `needs: maintainer + real pen` until one of the
   paths above is proven to work.
+- **Update 2026-11-13 (path 1 partly working):** the maintainer installed Xorg + dummy/evdev/libinput
+  drivers and a udev rule owning devices named "Brushye Virtual Pen" (with `LIBINPUT_IGNORE_DEVICE`).
+  `tools/observe/vpen.py` + `start_pen_display.sh` bring up a rootless Xorg `:78` with the stylus.
+  XInput shows Abs X/Y, **Abs Pressure 0–8191 and Tilt X/Y**, and CSP 1.13.2 under Wine **does
+  receive pressure**: a 5 %→100 % ramp stroke with the default G-pen tapers from hairline to full width.
+  - **Blocker with the evdev driver:** XI2 raw events show it posts tip press/release with **no
+    axes** (coordinates go in separate motion events). Wine's wintab button packets then
+    evidently carry X/Y = 0, and CSP draws a segment from the stroke end to screen (0,0) on
+    pen-up. Sending X/Y in the same kernel frame doesn't help.
+  - **Fix needs the libinput Xorg driver** (it sends the full axis set with tablet tip events),
+    but `LIBINPUT_IGNORE_DEVICE` also makes it refuse the device ("Failed to create a device").
+    Proposed rule change: replace `ENV{LIBINPUT_IGNORE_DEVICE}="1"` with
+    `ENV{ID_SEAT}="seat-brushye"`. The desktop's libinput only takes seat0 devices, while Xorg's
+    libinput driver opens the node by path regardless of seat. To check before sending any pen
+    events: KWin's input device list must not contain the device.
+  - The `inputtest` Xorg driver (no root) was ruled out: it puts pressure at axis index 4 after two
+    scroll axes, but Wine's wintab reads axes by position (X, Y, pressure, tilt).
 
 ---
 
