@@ -1,7 +1,7 @@
 # B-006 Global pen pressure adjustment and its graph
 - Status: draft
 - CSP version: 1.13.2 (PRO, 64-bit, build 202301210208)
-- Needs: **maintainer + real pen** for strokes; automated-Wine can capture dialog screenshots
+- Needs: automated-Wine with virtual stylus OK (D-003, verified 2026-11-13). Flag `verify-native`: one spot check with a real pen on native Windows (Wintab vs Windows Ink may scale pressure differently)
 
 ## Steps
 1. Screenshot the default graph. Press Stronger ×1, ×3 and Lighter ×1, ×3, screenshotting the

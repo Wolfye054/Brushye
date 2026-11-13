@@ -1,7 +1,7 @@
 # B-010 Tilt and direction dynamics (thickness, angle)
 - Status: draft
 - CSP version: 1.13.2 (PRO, 64-bit, build 202301210208)
-- Needs: **maintainer + real pen** (tilt-capable)
+- Needs: automated-Wine with virtual stylus *probably* OK. Tilt axes reach X (D-003), but CSP's use of them is unverified. Otherwise maintainer + real pen
 
 ## Steps
 Thickness 30, Direction horizontal, Angle source = "Direction of pen", then = "Pen tilt".

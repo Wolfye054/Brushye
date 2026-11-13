@@ -1,8 +1,21 @@
 Section "ServerFlags"
-  Option "AutoAddDevices" "false"
-  Option "AutoEnableDevices" "false"
+  # Hotplug is on, but Xorg runs with -seat seat-brushye, so udev only offers devices the
+  # maintainer's rule tagged for that seat (just the virtual pen). The InputClass sections below
+  # ignore everything else as a second safeguard.
   Option "AutoAddGPU" "false"
   Option "DontVTSwitch" "true"
+EndSection
+Section "InputClass"
+  Identifier "ignore everything"
+  MatchDevicePath "*"
+  Option "Ignore" "on"
+EndSection
+Section "InputClass"
+  Identifier "Brushye Virtual Pen"
+  MatchProduct "Brushye Virtual Pen"
+  MatchDevicePath "/dev/input/event*"
+  Driver "libinput"
+  Option "Ignore" "off"
 EndSection
 Section "Device"
   Identifier "dummy"
@@ -26,15 +39,7 @@ Section "Screen"
     Virtual 1920 1080
   EndSubSection
 EndSection
-Section "InputDevice"
-  Identifier "Brushye Virtual Pen"
-  Driver "evdev"
-  Option "Device" "@NODE@"
-  Option "Mode" "Absolute"
-  Option "GrabDevice" "on"
-EndSection
 Section "ServerLayout"
   Identifier "layout"
   Screen "scr"
-  InputDevice "Brushye Virtual Pen" "SendCoreEvents"
 EndSection

@@ -17,7 +17,7 @@ CSP's installed files, settings or databases.
 | Exported pixels are exact | Open PNG → export → **bit-identical RGB** on 131,072 px; alpha 255 (D-002) |
 | Batch observation | 56 blend-mode exports scripted end to end without failures |
 | Virtual tablet pressure (Xvfb) | **Not available.** Xvfb has no pressure-capable XInput device; see D-003 |
-| Virtual tablet pressure (Xorg :78, 2026-11-13) | Pressure reaches CSP. With the evdev driver, pen-up draws a stray segment to (0,0); the fix is pending a udev rule change (D-003 update) |
+| Virtual tablet pressure (Xorg :78, 2026-11-13) | **Works.** Libinput stylus on seat-brushye; pressure ramp tapers correctly; repeat runs are bit-identical (D-003 update) |
 
 ## Launch
 ```bash
@@ -69,14 +69,23 @@ These depend on the workspace layout. Recheck with a screenshot if the layout ch
   before data goes into the repo.
 
 ## Pen-capable display (D-003)
-`tools/observe/start_pen_display.sh WORKDIR [78]` starts `vpen.py` (uinput stylus "Brushye Virtual
-Pen"), a rootless Xorg using `xorg-pen.conf.in` (dummy video, auto-add off, only that device),
-and CSP. Pen commands go to `WORKDIR/fifo` (`in`, `move X Y P TX TY`, `down`, `up`, `out`,
-`wait MS`). XTEST (xdrive.py) still works on the same display for menus and keys.
-Pitfall: never `pkill -f 'Xorg :78'`, because it matches the calling shell's command line too.
-Anchor it: `pkill -f '^/usr/libexec/Xorg :78'`.
+`tools/observe/start_pen_display.sh WORKDIR [78]` starts:
+1. `vpen.py`, the uinput stylus "Brushye Virtual Pen" (the maintainer's udev rule puts it on
+   seat-brushye, owned by the user);
+2. `Xorg :78 -seat seat-brushye -dumbSched` with `xorg-pen.conf.in` (dummy video, libinput,
+   InputClass ignoring everything except the pen);
+3. a proximity in/out so the "Brushye Virtual Pen Pen (0)" STYLUS device exists before Wine loads wintab;
+4. CSP in the 1920×1080 Wine desktop.
 
-## Getting pressure later (D-003)
-See DECISIONS D-003 for the two options (Xorg dummy + libinput + uinput stylus with a udev rule,
-or a headless Wayland compositor with a virtual tablet). Both need maintainer action (root).
-Until one is proven, pressure/tilt specs are marked *maintainer + real pen*.
+Pen commands go to `WORKDIR/fifo`, one per line, with timing done in the daemon:
+`in`, `out`, `move X Y [P] [TX] [TY]` (screen px; P 0..1; tilt -1..1), `down`, `up`,
+`wait MS`, `rubber_in/out`. XTEST (xdrive.py) still works on the same display for menus and keys.
+
+Rules learned the hard way:
+- Move the mouse (xdrive `move`) before the first click after any pen stroke, or the click is lost.
+- Quit CSP with Ctrl+Q → Don't Save, not `wineserver -k`, or the export settings don't persist.
+- Never `pkill -f 'Xorg :78'`, because it matches the calling shell too.
+  Use `pkill -f '^/usr/libexec/Xorg :78'`.
+- Screenshot-check after each export. A click meant for a dialog that didn't open lands on the
+  canvas and paints a dot.
+

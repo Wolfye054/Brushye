@@ -46,23 +46,39 @@ gets written against a proposal until it's marked **ACCEPTED**.
      `zwp_tablet_v2` to Xwayland. More moving parts.
 - **Consequence:** pressure/tilt specs are marked `needs: maintainer + real pen` until one of the
   paths above is proven to work.
-- **Update 2026-11-13 (path 1 partly working):** the maintainer installed Xorg + dummy/evdev/libinput
-  drivers and a udev rule owning devices named "Brushye Virtual Pen" (with `LIBINPUT_IGNORE_DEVICE`).
-  `tools/observe/vpen.py` + `start_pen_display.sh` bring up a rootless Xorg `:78` with the stylus.
-  XInput shows Abs X/Y, **Abs Pressure 0–8191 and Tilt X/Y**, and CSP 1.13.2 under Wine **does
-  receive pressure**: a 5 %→100 % ramp stroke with the default G-pen tapers from hairline to full width.
-  - **Blocker with the evdev driver:** XI2 raw events show it posts tip press/release with **no
-    axes** (coordinates go in separate motion events). Wine's wintab button packets then
-    evidently carry X/Y = 0, and CSP draws a segment from the stroke end to screen (0,0) on
-    pen-up. Sending X/Y in the same kernel frame doesn't help.
-  - **Fix needs the libinput Xorg driver** (it sends the full axis set with tablet tip events),
-    but `LIBINPUT_IGNORE_DEVICE` also makes it refuse the device ("Failed to create a device").
-    Proposed rule change: replace `ENV{LIBINPUT_IGNORE_DEVICE}="1"` with
-    `ENV{ID_SEAT}="seat-brushye"`. The desktop's libinput only takes seat0 devices, while Xorg's
-    libinput driver opens the node by path regardless of seat. To check before sending any pen
-    events: KWin's input device list must not contain the device.
-  - The `inputtest` Xorg driver (no root) was ruled out: it puts pressure at axis index 4 after two
-    scroll axes, but Wine's wintab reads axes by position (X, Y, pressure, tilt).
+- **Update 2026-11-13: path 1 WORKS. Pressure observation is automated.**
+  - Maintainer setup: Xorg + dummy/libinput drivers, and the udev rule
+    `70-brushye-virtual-pen.rules`. It gives the user ownership of devices named
+    "Brushye Virtual Pen" and assigns them to `ID_SEAT=seat-brushye`.
+  - `tools/observe/start_pen_display.sh` starts three things: `vpen.py`, a pure-Python uinput
+    stylus with X/Y at 0.1 px resolution, pressure 0–8191 and tilt ±64; a rootless
+    `Xorg -seat seat-brushye -dumbSched` with dummy video and the libinput driver, which turns
+    the pen into an XInput STYLUS device "Brushye Virtual Pen Pen (0)"; and CSP under Wine.
+  - **Isolation check:** gnome-shell does not open the pen's event node (its fd table was
+    checked). The observation Xorg's udev hotplug only sees seat-brushye devices; an InputClass
+    ignores everything else as a second safeguard. The log shows only the pen being added.
+  - **Verified:** a 5 %→100 % pressure ramp with CSP's default G-pen (size 10) tapers from about
+    0.3 px to about 7.8 px wide, with no artifacts. Two runs of the same pen script exported
+    **bit-identical** PNGs (1600×1200), so pressure specs are reproducible.
+  - **Pitfalls found (all handled by the scripts):**
+    1. Wine's wintab (dlls/winex11.drv/wintab.c, Wine 11.4) reads `axis_data[0..4]` of every
+       motion event as X, Y, pressure, tiltX, tiltY. It assumes all axes are present from
+       axis 0. The evdev Xorg driver sends only the axes that changed, so a pressure-only update
+       was read as position (0,0) and drew a line to the screen corner. The libinput driver
+       always sends all axes. (Button events without axes are fine; Wine reuses the last packet.)
+    2. `LIBINPUT_IGNORE_DEVICE` in the udev rule also blocks Xorg's libinput driver. The seat
+       assignment replaces it.
+    3. A device declared in xorg.conf can't spawn libinput tool subdevices: the X server
+       silently rejects option lists that carry both `Identifier` and `Name`. So the pen is
+       hotplugged through udev instead.
+    4. The stylus subdevice appears on the first proximity-in, and Wine enumerates tablets when
+       wintab loads. The start script creates the stylus before launching CSP.
+    5. The first XTEST click after a pen stroke is swallowed. Move the mouse before clicking.
+    6. CSP's export settings only persist if CSP exits cleanly; after `wineserver -k` the PNG
+       dialog reverts to preview on and "Auto detect" colour.
+  - The `inputtest` Xorg driver was ruled out: pressure sits at axis index 4, after two scroll
+    axes, but Wine reads axes by position.
+  - Still to verify: whether tilt reaches CSP (the axes reach X; B-010 needs a tilt-sensitive brush test).
 
 ---
 
