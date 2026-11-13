@@ -211,6 +211,9 @@ dependencies = [
 [[package]]
 name = "brushye-core"
 version = "0.0.0"
+dependencies = [
+ "png",
+]
 
 [[package]]
 name = "brushye-tablet"

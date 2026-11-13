@@ -1,5 +1,7 @@
-//! The 28 raster-layer blending modes of CSP 1.13.2, in its dropdown order (spec L-001).
-//! The math lives in the colour module (M3, DECISIONS D-017); this is the identity and naming.
+//! The 28 raster-layer blending modes of CSP 1.13.2, in its dropdown order (spec L-001),
+//! and their math (`math`, DECISIONS D-017).
+
+pub mod math;
 
 macro_rules! blend_modes {
     ($($v:ident => $name:literal),* $(,)?) => {
