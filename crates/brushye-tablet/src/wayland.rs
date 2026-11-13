@@ -41,6 +41,17 @@ pub(crate) struct WaylandBackend {
 #[derive(Default)]
 struct ToolData {
     kind: Mutex<Option<Tool>>,
+    /// Axes the compositor advertised for this tool (`capability` events, sent before `done`).
+    /// Axis events for unadvertised capabilities are ignored: e.g. GNOME was seen sending a
+    /// constant rotation of 90° for a pen without barrel-rotation sensing (2026-11-13).
+    caps: Mutex<Caps>,
+}
+
+#[derive(Default, Clone, Copy)]
+struct Caps {
+    tilt: bool,
+    pressure: bool,
+    rotation: bool,
 }
 
 /// Axis values and transitions collected until the tool's `frame` event.
@@ -57,6 +68,10 @@ struct State {
     tracker: PenTracker,
     out: Vec<PenEvent>,
     pending: Pending,
+}
+
+fn caps(data: &ToolData) -> Caps {
+    data.caps.lock().map(|c| *c).unwrap_or_default()
 }
 
 fn tool_kind(t: WEnum<zwp_tablet_tool_v2::Type>) -> Tool {
@@ -297,18 +312,35 @@ impl Dispatch<ZwpTabletToolV2, ToolData> for State {
                 p.obs.y = Some(y);
                 p.any_axis = true;
             }
+            E::Capability { capability } => {
+                use zwp_tablet_tool_v2::Capability as C;
+                if let Ok(mut c) = data.caps.lock() {
+                    match capability {
+                        WEnum::Value(C::Tilt) => c.tilt = true,
+                        WEnum::Value(C::Pressure) => c.pressure = true,
+                        WEnum::Value(C::Rotation) => c.rotation = true,
+                        _ => {}
+                    }
+                }
+            }
             E::Pressure { pressure } => {
-                p.obs.pressure = Some(pressure as f32 / 65535.0);
-                p.any_axis = true;
+                if caps(data).pressure {
+                    p.obs.pressure = Some(pressure as f32 / 65535.0);
+                    p.any_axis = true;
+                }
             }
             E::Tilt { tilt_x, tilt_y } => {
-                p.obs.tilt_x = Some(tilt_x as f32);
-                p.obs.tilt_y = Some(tilt_y as f32);
-                p.any_axis = true;
+                if caps(data).tilt {
+                    p.obs.tilt_x = Some(tilt_x as f32);
+                    p.obs.tilt_y = Some(tilt_y as f32);
+                    p.any_axis = true;
+                }
             }
             E::Rotation { degrees } => {
-                p.obs.twist = Some(degrees as f32);
-                p.any_axis = true;
+                if caps(data).rotation {
+                    p.obs.twist = Some(degrees as f32);
+                    p.any_axis = true;
+                }
             }
             E::Button {
                 button, state: s, ..
