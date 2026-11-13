@@ -1,5 +1,5 @@
 //! Brushye core: document model, colour/blend math (`blend::math`), CPU reference renderer
-//! (`render`), and later the brush engine.
+//! (`render`) and the brush engine (`brush`).
 //!
 //! No UI, GPU or OS dependencies (DECISIONS D-010). Documents are immutable values shared via
 //! `Arc`: every edit produces a new version that shares unchanged layers and tiles with the
@@ -10,6 +10,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 pub mod blend;
+pub mod brush;
 pub mod document;
 pub mod hash;
 pub mod ids;

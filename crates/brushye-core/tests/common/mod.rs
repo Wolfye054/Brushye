@@ -18,8 +18,19 @@ pub struct Img {
 
 impl Img {
     pub fn load(rel: &str) -> Img {
-        let path = data(rel);
-        let file = std::fs::File::open(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        Img::load_path(&data(rel), rel)
+    }
+    /// Load from `specs/behavior/<area>/data/<rel>`.
+    pub fn load_spec(area: &str, rel: &str) -> Img {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../specs/behavior")
+            .join(area)
+            .join("data")
+            .join(rel);
+        Img::load_path(&path, rel)
+    }
+    fn load_path(path: &Path, rel: &str) -> Img {
+        let file = std::fs::File::open(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         let mut reader = png::Decoder::new(std::io::BufReader::new(file))
             .read_info()
             .unwrap_or_else(|e| panic!("{rel}: {e}"));
