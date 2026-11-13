@@ -1,7 +1,7 @@
 # M2 report: document model + command layer (2026-11-13)
 
-Status: **built and tested locally; the cross-platform exit check is in place but has not run yet**
-(the repo has no remote, so CI has never executed).
+Status: **done.** The first CI run (43488065617, 2026-11-13) passed on Linux, Windows and macOS,
+including the golden document hash, so replay is bit-identical across the three platforms.
 
 ## What works
 - `brushye-core`: document (size, dpi, paper), bottom-to-top layer stack with ids, names,
@@ -26,7 +26,7 @@ Status: **built and tested locally; the cross-platform exit check is in place bu
 ## Exit criterion
 "A journal replays to an identical document hash on all 3 CI OSes": a golden-hash test
 (`golden_document_hash_is_platform_independent`) pins the hash of a fixed script. It passes on
-Linux; it will check Windows and macOS the first time CI runs, which needs a GitHub remote.
+Linux, Windows and macOS (CI run 43488065617). **Exit criterion met.**
 
 ## Not done / deferred
 - The optional time-based undo merge interval (D-013 point 3, default 0 ms): needs command
