@@ -82,46 +82,52 @@ gets written against a proposal until it's marked **ACCEPTED**.
 
 ---
 
-## D-010 Workspace / crate layout — PROPOSAL
-- **Date:** 2026-11-11
-- **Proposal:** a cargo workspace under `crates/`. Nothing below the UI line depends on egui,
-  wgpu, winit or any OS API, and everything below it builds and tests headless on all three
-  platforms.
+## D-010 Workspace / crate layout — ACCEPTED (2026-11-13)
+- **Date:** proposed 2026-11-11; accepted 2026-11-13 by the maintainer, in the lighter form below.
+- **Decision:** a cargo workspace under `crates/` with five crates to start. Each one exists
+  because it enforces one of CLAUDE.md's rules at compile time. Further splits are added only
+  when a milestone needs them.
 
 ```
 crates/
-  brushye-core       document model: Document, Canvas, LayerTree, Layer kinds, Tile storage,
-                     Selection, ids. Pure data + invariants, no I/O.
-  brushye-color      pixel types, colour conversions, blend-mode math (integer, LUT-verified
-                     against observed CSP data), compositing of tiles. no_std-friendly.
-  brushye-brush      brush engine: input sample processing, stabilization, dynamics/curves,
-                     dab generation, dab rasterization into a stroke buffer, ink combine.
-  brushye-render     CPU *reference* renderer: layer tree → flattened image. Defines correct output.
-  brushye-command    command definitions, text codec (parse/print), versioning + migrations,
-                     executor, undo/redo, session journal, queries.
-  brushye-format     .brsh native format (read/write), PNG export/import. Later: PSD, ORA.
-  brushye-sut        .sut import (post-alpha). Runs only on user-supplied files.
-  brushye-clip       .clip import (later).
-  brushye-gpu        wgpu canvas renderer, tested against brushye-render within stated tolerance.
-  brushye-tablet     cross-platform pen input → `InputSample` stream (pressure, tilt, rotation,
-                     eraser end, timestamps). Platform backends behind cfg.
-  brushye-app        egui/eframe UI. A client of brushye-command only.
-  brushye-cli        headless binary: `brushye run script.bcmd`, `brushye replay journal`,
-                     `brushye query …`, `brushye render doc.brsh out.png`.
-  brushye-mcp        MCP server (stdio) exposing commands and queries.
-xtask/               dev tasks: update reference images, run observation-data checks.
+  brushye-core      document model (Document, LayerTree, layers, tiles, selection, ids),
+                    colour + blend-mode math, brush engine, CPU reference renderer.
+                    No UI/GPU/OS deps; everything here is headless-testable.
+                    Internal modules: model, color, brush, render.
+  brushye-command   command definitions, text codec (parse/print), versioning + migrations,
+                    executor, undo/redo, session journal, queries.
+                    The single gate every client uses to change state.
+  brushye-format    .brsh native format (read/write), PNG import/export. Later: PSD, ORA.
+  brushye-app       egui/eframe UI, wgpu canvas, tablet input.
+                    The only crate allowed to touch UI, GPU or OS input APIs.
+  brushye-cli       headless binary: run scripts, replay journals, queries, render to PNG.
 ```
 
-  Dependency direction: `core ← color ← brush ← render ← command ← format ← {cli, mcp, app}`.
-  `gpu`, `tablet` and `app` are the only crates allowed to touch the GPU or OS input APIs.
-- **Alternatives:** (a) one big `brushye` crate with modules: faster to start, but it gets
-  harder to enforce "no UI deps in core" and slower to compile. (b) Merging `color` into
-  `render`: blending math is reused by the brush engine (ink combine modes) and by the GPU
-  shaders' test oracle, so it earns its own crate.
+  **Dependency direction (one-way):** `core ← command ← format ← {cli, app}`.
+  `brushye-command` also depends on `brushye-core`; `brushye-format` may read core types.
+  Nothing depends on `brushye-app` or `brushye-cli`.
+
+  **Rules this enforces:**
+  - Only `brushye-app` may depend on egui, eframe, wgpu, winit or platform input crates.
+  - Clients (`app`, `cli`, later `mcp`) change state only through `brushye-command`.
+    Mutating document APIs in `brushye-core` are `pub(crate)` or reachable only via command
+    execution, so a client can't bypass the command layer.
+
+  **Added later, when their milestone starts (no new decision needed, only a DECISIONS note):**
+  - `brushye-tablet`: the M1 tablet spike starts as its own small crate (with a test app); its
+    proven parts may later move into `brushye-app` or stay a crate (D-015).
+  - `brushye-mcp` (M9), `brushye-sut` (M8), `brushye-clip` (M11). Keeping the importers
+    separate makes the code that touches CSP formats easy to review against the clean-room rules.
+  - `brushye-gpu`, if the wgpu renderer outgrows `brushye-app`.
+  - Splitting `color`, `brush` or `render` out of `brushye-core` once it gets large or slow
+    to compile. This is mechanical, because the module dependencies are already one-way.
+- **Alternatives considered:** (a) the original 13-crate split (core, color, brush, render,
+  command, format, sut, clip, gpu, tablet, app, cli, mcp, plus xtask): the same guarantees,
+  but structure for code that doesn't exist yet. (b) One big crate: nothing stops UI code
+  creeping into the core.
 - **Reason:** CLAUDE.md requires a headless, testable core and a single command layer that every
-  client goes through. Crate boundaries make that a compile-time guarantee.
-- **Open question for maintainer:** split `brushye-tablet` into its own repo-level spike first
-  (ROADMAP M1)? I recommend yes. It's the top technical risk.
+  client goes through. Five crates make both compile-time guarantees with the least
+  upfront structure.
 
 ## D-011 Command format — PROPOSAL
 - **Date:** 2026-11-11
@@ -182,7 +188,7 @@ xtask/               dev tasks: update reference images, run observation-data ch
      `specs/behavior/blending/layer-blend-modes-opaque.md`). Strokes accumulate in a
      higher-precision stroke buffer (u16 or f32, decided by the brush specs) and are combined
      into the layer once, using the ink combine mode.
-  2. **The CPU reference renderer (`brushye-render`) defines correct output.** Compositing and
+  2. **The CPU reference renderer (the `render` module of `brushye-core`, D-010) defines correct output.** Compositing and
      blend modes use integer arithmetic only, so they're bit-identical on every platform.
      Brush geometry uses `f32` with these rules: no `mul_add`/FMA, no platform `libm`
      (use the pure-Rust `libm` crate), no SIMD paths whose results differ from scalar, a fixed

@@ -106,11 +106,14 @@ command layer. Nothing changes state outside it.
 - `docs/observation/wine-harness.md`: how to run CSP 1.13.2 under Wine/Xvfb.
 - `docs/research/`: manual study notes (paraphrased, with source URLs).
 - `tools/observe/`: UI driver and analysis scripts for automated observation.
-- `crates/`: Rust workspace (placeholder crate until the D-010 layout is approved).
+- `crates/`: Rust workspace. Layout per DECISIONS D-010 (accepted): brushye-core, brushye-command,
+  brushye-format, brushye-app, brushye-cli. Only brushye-app may use UI/GPU/OS-input crates.
+  The crates are created when application work starts; a placeholder crate stands in until then.
 
 ## Current status
-Phase 1 (study & planning) is done; the next step is waiting for maintainer approval of the
-DECISIONS.md proposals. Don't write application code until they're marked ACCEPTED.
+Phase 1 (study & planning) is done. D-010 (crate layout) is ACCEPTED; the other DECISIONS.md
+proposals are still under review. Don't write application code that depends on a decision
+until it is marked ACCEPTED.
 
 ## Alpha goal
 Basic drawing with custom brushes:

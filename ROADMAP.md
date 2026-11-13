@@ -22,7 +22,7 @@ Ordering follows CLAUDE.md's priorities: command layer → brush engine → .sut
 - **Exit:** pressure + tilt + eraser end confirmed on ≥ 2 OSes; a written risk report for the rest.
 
 ## M2 — Document model + command layer core (headless)
-- `brushye-core`: document, layer tree (raster + paper), tiles, ids.
+- `brushye-core` (model module): document, layer tree (raster + paper), tiles, ids.
 - `brushye-command`: text codec (parse/print round-trip, fuzzed), versioning + migration
   framework, executor, queries, session journal.
 - Commands: `doc.new`, `layer.new/delete/move/set` (name, visibility, opacity, blend),
@@ -31,7 +31,7 @@ Ordering follows CLAUDE.md's priorities: command layer → brush engine → .sut
 - **Exit:** a journal replays to an identical document hash on all 3 CI OSes.
 
 ## M3 — CPU reference compositor
-- `brushye-color`: all 28 blend modes, opacity, straight-alpha compositing, paper.
+- `brushye-core` (color module): all 28 blend modes, opacity, straight-alpha compositing, paper.
 - **Exact-match tests** against the observed CSP tables in `specs/behavior/blending/`.
 - PNG export (`brushye-format`), `brushye render doc out.png`.
 - **Exit:** every *observed* blend spec passes bit-exactly. Modes whose formula is still
