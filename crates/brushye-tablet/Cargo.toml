@@ -1,0 +1,23 @@
+[package]
+name = "brushye-tablet"
+description = "Pen tablet input for Brushye: one ordered pen-event stream per platform (DECISIONS D-015)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+raw-window-handle = "0.6.2"
+
+[target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
+x11rb = { version = "0.13.2", default-features = false, features = ["xinput"] }
+wayland-client = "0.31.15"
+wayland-backend = { version = "0.3.17", features = ["client_system", "dlopen"] }
+wayland-protocols = { version = "0.32.13", features = ["client", "unstable"] }
+
+[dev-dependencies]
+eframe = { version = "0.37", default-features = false, features = ["wgpu", "wayland", "x11", "default_fonts"] }
