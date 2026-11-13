@@ -1,5 +1,5 @@
 # B-009 Circle tip hardness falloff
-- Status: **observed** (profiles recorded; exact functional form open)
+- Status: **implemented (interim: observed size-101 profile scaled by size)**
 - CSP version: 1.13.2 (PRO, 64-bit, build 202301210208)
 - Date / method / observer: 2026-11-13 / automated-Wine + virtual stylus / Claude
 
@@ -53,3 +53,14 @@ by `b009_profile.py data/B009_h?_aa0.png`.
 - The exact falloff function per level, and how it scales with size. Only size 101 was run.
   Next: the same 5 levels at sizes 11 and 41, then fit a profile in d/R.
 - Is level 4's ramp beyond R a fixed pixel width or a fraction of size?
+
+## Implementation (2026-11-13, M4)
+Interim model until the exact falloff is known: the observed radial profile per level, binned
+at 0.25 px (`tools/observe/make_hardness_tables.py` → `brush/hardness_tables.rs`), scaled by
+50.5/R for other sizes. At size 101: within 1 level (h1, h2), 2 (h3), 16 (h4).
+
+Finding: **soft dabs are centred half a pixel off the press point.** The h1–h4 dabs are centred
+on the pixel corner (301, 201), not on (300.5, 200.5) where the pen went down (the +x profile at
+pixel i equals the −x profile at pixel i − 1); the hard tip (h5) is centred on the press point.
+Brushye offsets soft dabs by (+0.5, +0.5). Open: is this a fixed offset or rounding of the centre
+to the pixel grid? Sweep sub-pixel press positions with a soft tip.

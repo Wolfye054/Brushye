@@ -46,10 +46,12 @@ Ordering follows CLAUDE.md's priorities: command layer → brush engine → .sut
 - **Exit:** every *observed* blend spec passes bit-exactly (formulas, or observed tables for
   Overlay/Hard light/Vivid light, D-017). Open cases have stated tolerances, listed in the report.
 
-## M4 — Brush engine v1 (headless)
+## M4 — Brush engine v1 (headless) — IN PROGRESS
+Part 1 done (docs/reports/M4-brush-engine-part1.md): round tip, AA, hardness (interim), spacing,
+build-up, pressure dynamics, `brush.stroke`. Remaining items wait on specs B-007/B-008/B-010/B-011.
 - Input processing, stabilization, dynamics + curves, round tip (hardness, AA levels,
   thickness, angle), spacing, density, opacity, ink combine Normal / Compare density / Erase.
-- `stroke` command with the encoded sample stream. Strokes are deterministic and replayable.
+- `brush.stroke` command with the encoded sample stream. Strokes are deterministic and replayable.
 - Reference-image tests against observed CSP strokes (mouse-driven specs, automated),
   plus pressure specs once the maintainer has recorded them.
 - **Exit:** brush specs at status *observed* have passing tests; open differences are listed.

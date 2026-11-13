@@ -89,9 +89,11 @@ The parser reports the line number, column and a message. Unknown commands, unkn
 duplicate keys, positionals after a key, wrong value kinds, out-of-range values and malformed
 tokens are errors. Nothing is ignored silently.
 
-## 7. Stroke samples (`samples=` of the stroke command)
+## 7. Stroke samples (`samples=` of `brush.stroke`)
 
-A stroke records the raw input stream before any stabilization (D-011). Two forms:
+A stroke records the raw input stream before any stabilization (D-011). Pressure is recorded
+after the global pen pressure adjustment (spec B-006), so a stroke replays the same whatever
+that setting is later. Two forms:
 
 **Blob (canonical, written by Brushye):** `b64:` of
 ```

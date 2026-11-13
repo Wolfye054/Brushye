@@ -1,5 +1,5 @@
 # B-005 Pen pressure → opacity and → brush density
-- Status: **observed** (linear, minimum 0)
+- Status: **implemented (linear, minimum 0)**
 - CSP version: 1.13.2 (PRO, 64-bit, build 202301210208)
 - Needs: automated-Wine with virtual stylus (D-003). Flag `verify-native` (real-pen spot check)
 - Date / method / observer: 2026-11-13 / automated-Wine + virtual stylus / Claude
@@ -46,3 +46,7 @@ Data: `data/B005_opacity_min0.png`, `data/B005_density_min0.png`.
 - Where the opacity cap applies when P varies within a stroke: per dab or per pixel max?
   Run a pressure ramp with the opacity dynamic.
 - Does "Adjust brush density by gap" change N?
+
+## Implementation (2026-11-13, M4)
+Opacity scales the stroke buffer (B-003), density scales each dab. Test
+`b004_b005_pressure_dynamics_match_within_tolerance`: both grids within 3 levels.

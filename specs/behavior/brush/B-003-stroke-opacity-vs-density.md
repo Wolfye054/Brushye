@@ -1,5 +1,5 @@
 # B-003 Stroke accumulation: Opacity cap vs Brush density
-- Status: **observed**
+- Status: **implemented**
 - CSP version: 1.13.2 (PRO, 64-bit, build 202301210208)
 - Date / method / observer: 2026-11-13 / automated-Wine + virtual stylus / Claude
 
@@ -56,3 +56,21 @@ For one stroke with opacity O and density D, at a pixel covered by n of that str
 - Whether the truncation to 8 bits happens on export only or in the layer itself. It
   matters for many-stroke builds; test by laying many O = 10 % strokes over one another.
 - Other ink modes (B-008) and layer opacity/blend interaction are not covered.
+
+## Implementation (2026-11-13, M4)
+`brushye_core::brush::StrokeBuffer`: per pixel T = ∏(1 − c·D), stroke alpha a = O·(1 − T),
+committed as a8 = ⌊65535·a⌋ >> 8. Where a stroke lands on existing ink the commit is 8-bit:
+
+    A' = A + a8 − ⌊A·a8 / 255⌋
+
+That reproduces every observed stroke-over-stroke level (63 over 63 → 111, 95 under 63 → 135,
+127 over 127 → 191). The float "over" used in the analysis gives the same values here; the
+8-bit form is what the 8-bit layer model can store, and it is exact on all H+V pixels. Note
+it differs from the layer compositing path (L-005), which gives 110 for 63 over 63.
+
+Test `b003_accumulation_exact_away_from_dab_edges`: H and V exact away from dab edges in all
+four exports; P pinned (see B-002 implementation note on polylines).
+
+Not observed, chosen for now: stroke colour where the layer already has a different colour
+(alpha-weighted, like Normal), and per-dab varying opacity (each pixel keeps the highest dab
+opacity, so a constant opacity behaves exactly as observed).

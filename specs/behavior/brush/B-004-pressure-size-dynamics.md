@@ -1,5 +1,5 @@
 # B-004 Pen pressure → brush size (minimum value + curve)
-- Status: **observed** (linear, minimum value, 1-point curve). Multi-point curves are open
+- Status: **implemented (linear, minimum, 1-point curve; multi-point curves use an unverified B-spline)**
 - CSP version: 1.13.2 (PRO, 64-bit, build 202301210208)
 - Needs: automated-Wine with virtual stylus (D-003). Flag `verify-native`: one spot check with a
   real pen on native Windows (Wintab vs Windows Ink may scale raw pressure differently)
@@ -73,3 +73,10 @@ editor's points (quadratic Bézier for 1 interior point). P = 0 produces no dab.
   (B-001).
 - Is there a pressure threshold below which no dab is drawn (CSP side, besides P = 0)?
   Sweep P = 0.001…0.02.
+
+## Implementation (2026-11-13, M4)
+`brushye_core::brush::{Dynamics, Curve}`. Multi-point curves use the quadratic B-spline
+through the control points (equal to the observed Bézier for one point; unverified for more).
+Test `b004_b005_pressure_dynamics_match_within_tolerance` replays the 21-stroke grids: errors
+only on the outermost anti-aliased pixel (max 9 / 13 / 11 levels for the three runs), about
+0.05 px of diameter, within the precision with which pressure reaches CSP.

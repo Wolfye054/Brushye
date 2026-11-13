@@ -58,3 +58,8 @@ pressure, with Stronger/Lighter as fixed output nudges of the interior points.
 - The exact Stronger/Lighter step rule (additive? toward a bound?). Next: more presses, and
   read the points from a larger graph.
 - Does the global curve also apply to tilt, or only pressure? (B-010.)
+
+## Implementation note (2026-11-13, M4)
+`brush.stroke` samples carry pressure **after** the global adjustment: the curve is part of
+input capture (like device calibration), so a stroke command replays identically whatever the
+global setting is later. The global curve itself arrives with the app shell (M6).

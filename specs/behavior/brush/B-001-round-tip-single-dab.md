@@ -1,5 +1,5 @@
 # B-001 Round tip: single-dab profile vs size and anti-aliasing
-- Status: **observed** (AA Weak/Middle/Strong exact; AA None edge-tie rule open)
+- Status: **implemented (AA Weak/Middle/Strong exact; AA None edge-tie rule open)**
 - CSP version: 1.13.2 (PRO, 64-bit, build 202301210208)
 - Date / method / observer: 2026-11-13 / automated-Wine + virtual stylus (`vpen.py`, Xorg :78
   libinput → Wine wintab) / Claude. Flag `verify-native` only for the AA None tie rule.
@@ -51,3 +51,9 @@ Let d be the distance from the dab centre to the pixel centre, R = size/2, and
   sizes 16 and 63 covering pixels up to ~0.1 px beyond R. Needs a dedicated sub-pixel sweep
   (sizes 2, 16, 63; offsets in 0.1 px steps).
 - AA Strong ±1 at size 25.3 (7 px).
+
+## Implementation (2026-11-13, M4)
+`brushye_core::brush::tip::coverage`. Test `observed_brush.rs` (`b001_*`) replays the grid:
+- Weak and Middle: every pixel exact; Strong: 7 px off by 1 (as in the spec).
+- AA None, closed disc: 24 px wrong, all on the open edge-tie rule. One of them is 0.21 px
+  outside the edge (size 1 at a pixel corner lights one pixel).

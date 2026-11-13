@@ -1,5 +1,5 @@
 # B-002 Stroke gap (spacing): Narrow / Normal / Wide / Fixed
-- Status: **observed**
+- Status: **implemented (straight strokes; curves open)**
 - CSP version: 1.13.2 (PRO, 64-bit, build 202301210208)
 - Date / method / observer: 2026-11-13 / automated-Wine + virtual stylus / Claude
 
@@ -72,3 +72,16 @@ Darken off. Brush tip > "Adjust brush density by gap" off.
 - "Adjust brush density by gap" ON, and "Correct velocity input" OFF, were not tested.
 - The dropdown next to the presets could not be opened under Wine. Its contents and the
   Fixed range are unknown (10 to 90 used successfully).
+
+## Implementation (2026-11-13, M4)
+`brushye_core::brush::place_dabs`: t_k = k·gap·size/100 computed directly (constant size), dabs
+up to and including t = path length, none added at the release point. With pressure-driven
+size each gap follows the current dab's size (open question above).
+
+Test `b002_spacing_exact_away_from_dab_edges` replays all 8 exports: **every pixel away from
+a dab edge (> 0.15 px) is exact**. Edge pixels differ only through the open AA None edge rule.
+
+Finding while implementing (B-003 data): on the 5-point polyline P, CSP leaves pixels empty
+at the corners and at the end that a dab placed exactly on the input polyline would cover. CSP
+seems to smooth or shorten the path between sparse input points. Brushye follows the straight
+polyline for now; this needs a spec of its own (sparse events, sharp corners, sub-pixel ends).
