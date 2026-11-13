@@ -8,6 +8,10 @@
 //!   updates are normal: X11 sends only changed valuators, Wayland sends one event per axis.)
 //! - `Down`/`Up` alternate; a lost `Up` is synthesised before `Out` or a tool change.
 //! - Values are clamped to the documented ranges; non-finite values are dropped.
+//! - Barrel rotation (twist) is reported only once it has varied for that tool. Some drivers
+//!   declare a rotation axis they never fill: OpenTabletDriver's virtual tablet made GNOME report
+//!   a constant 90° for a pen without rotation sensing (2026-11-13). Once a tool's twist has
+//!   changed it is reported from then on, also in later proximity sessions.
 
 use crate::{PenEvent, PenPose, Tool};
 
@@ -40,6 +44,20 @@ pub struct PenTracker {
     tool: Option<Tool>,
     down: bool,
     axes: Axes,
+    /// First twist value seen per tool, and whether it has varied since (see module docs).
+    twist_first: [Option<f32>; 3],
+    twist_varied: [bool; 3],
+}
+
+/// Twist values closer than this count as unchanged.
+const TWIST_EPSILON: f32 = 0.01;
+
+fn tool_index(t: Tool) -> usize {
+    match t {
+        Tool::Pen => 0,
+        Tool::Eraser => 1,
+        Tool::Other => 2,
+    }
 }
 
 fn finite32(v: Option<f32>) -> Option<f32> {
@@ -109,11 +127,20 @@ impl PenTracker {
         }
         if let Some(r) = finite32(o.twist) {
             let r = r.rem_euclid(360.0);
-            a.twist = Some(if r >= 360.0 { 0.0 } else { r });
+            let r = if r >= 360.0 { 0.0 } else { r };
+            a.twist = Some(r);
+            let i = tool_index(self.tool.unwrap_or(Tool::Pen));
+            match self.twist_first[i] {
+                None => self.twist_first[i] = Some(r),
+                Some(f) if (f - r).abs() > TWIST_EPSILON => self.twist_varied[i] = true,
+                Some(_) => {}
+            }
         }
         if let Some(t) = o.time_us {
             a.time_us = t;
         }
+        let twist_ok = self.twist_varied[tool_index(self.tool.unwrap_or(Tool::Pen))];
+        let a = &self.axes;
         if let (Some(x), Some(y)) = (a.x, a.y) {
             let tilt = match a.tilt {
                 [Some(tx), Some(ty)] => Some([tx, ty]),
@@ -126,7 +153,7 @@ impl PenTracker {
                 y,
                 pressure: a.pressure,
                 tilt,
-                twist: a.twist,
+                twist: if twist_ok { a.twist } else { None },
                 time_us: a.time_us,
             }));
         }
@@ -265,6 +292,14 @@ mod tests {
     fn values_are_clamped_and_non_finite_dropped() {
         let mut t = PenTracker::new();
         let mut out = vec![];
+        // Give the pen a varying twist first, so twist is reported (see module docs).
+        t.observe(
+            Observation {
+                twist: Some(0.0),
+                ..Default::default()
+            },
+            &mut out,
+        );
         t.observe(
             Observation {
                 x: Some(1.0),
@@ -316,6 +351,66 @@ mod tests {
             &mut out,
         );
         assert!(matches!(out[0], PenEvent::Pose(p) if p.pressure == Some(0.0)));
+    }
+
+    fn twists(out: &[PenEvent]) -> Vec<Option<f32>> {
+        out.iter()
+            .filter_map(|e| {
+                if let PenEvent::Pose(p) = e {
+                    Some(p.twist)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    fn twist_obs(x: f64, r: f32) -> Observation {
+        Observation {
+            x: Some(x),
+            y: Some(0.0),
+            twist: Some(r),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn constant_twist_is_not_reported() {
+        // OpenTabletDriver + GNOME: a declared but unused rotation axis reads a constant 90°.
+        let mut t = PenTracker::new();
+        let mut out = vec![];
+        for i in 0..5 {
+            t.observe(twist_obs(f64::from(i), 90.0), &mut out);
+        }
+        assert!(twists(&out).iter().all(Option::is_none));
+    }
+
+    #[test]
+    fn twist_is_reported_once_it_varies_and_stays_reported() {
+        let mut t = PenTracker::new();
+        let mut out = vec![];
+        t.observe(twist_obs(0.0, 30.0), &mut out);
+        t.observe(twist_obs(1.0, 30.0), &mut out);
+        t.observe(twist_obs(2.0, 35.0), &mut out);
+        t.observe(twist_obs(3.0, 35.0), &mut out);
+        assert_eq!(twists(&out), vec![None, None, Some(35.0), Some(35.0)]);
+        // Leaving and re-entering proximity keeps it: this tool has real rotation.
+        t.proximity_out(&mut out);
+        out.clear();
+        t.observe(twist_obs(4.0, 35.0), &mut out);
+        assert_eq!(twists(&out), vec![Some(35.0)]);
+    }
+
+    #[test]
+    fn twist_variation_is_tracked_per_tool() {
+        let mut t = PenTracker::new();
+        let mut out = vec![];
+        t.observe(twist_obs(0.0, 10.0), &mut out);
+        t.observe(twist_obs(1.0, 20.0), &mut out);
+        t.proximity_in(Tool::Eraser, &mut out);
+        out.clear();
+        t.observe(twist_obs(2.0, 20.0), &mut out);
+        assert_eq!(twists(&out), vec![None]);
     }
 
     fn unreachable_event(e: &PenEvent) -> ! {
