@@ -29,7 +29,7 @@ gets written against a proposal until it's marked **ACCEPTED**.
   The ICC chunk is stripped before observation data is committed.
 - **Alternatives:** Screenshots (forbidden for pixel values by CLAUDE.md, and colour-managed/zoomed).
 
-## D-003 Virtual tablet pressure under Wine: not available in this setup — ACCEPTED (finding)
+## D-003 Virtual tablet pressure under Wine — ACCEPTED (not possible under Xvfb; works since 2026-11-13 via Xorg + libinput, see update)
 - **Date:** 2026-11-11
 - **Finding:** Xvfb exposes only core and XTEST pointers with relative X/Y valuators, with no
   pressure or tilt axis, so Wine's wintab has nothing to report. A uinput virtual stylus wouldn't
@@ -129,9 +129,12 @@ crates/
   client goes through. Five crates make both compile-time guarantees with the least
   upfront structure.
 
-## D-011 Command format — PROPOSAL
-- **Date:** 2026-11-11
-- **Proposal:** a line-oriented text format, one command per line, UTF-8.
+## D-011 Command format — ACCEPTED (2026-11-13)
+- **Date:** proposed 2026-11-11; accepted 2026-11-13 by the maintainer, after comparing it with
+  photocraft's command layer (see "Alternatives"). The custom text syntax is kept, and four
+  ideas from photocraft are added (registry, queries as registry entries, typed params,
+  seeded strokes). **No photocraft code is reused**, only the design ideas.
+- **Decision:** a line-oriented text format, one command per line, UTF-8.
 
 ```
 #brushye-journal v1 app=0.1.0
@@ -143,10 +146,24 @@ crates/
 @6 history.undo
 ```
 
+  - **One command registry.** Every command is registered once (in `brushye-command`, D-010)
+    with: its id, its current version, a typed params struct, a `journal` flag, and an
+    `enabled(state)` check. The UI, CLI, scripts and the MCP server all dispatch through the
+    same registry and the same `execute(command)` entry point. Nothing changes document or
+    application state any other way.
+  - **Typed params.** Each command's arguments are a Rust struct. The text codec, the JSON form
+    and a machine-readable schema (for the MCP server and generated UI) are all derived from
+    that struct, so they can't drift apart. Unknown keys, missing required keys, and values out
+    of range are errors, never silently ignored.
   - **Grammar:** `@<seq> <namespace>.<verb>[/<cmdver>] <positional>* <key>=<value>*`.
     Values are typed: integers, decimals (canonical shortest round-trip form, `f32`/`f64` as
     declared per field), `#rrggbb[aa]`, quoted strings with `\` escapes, ids (`L2`, `S5`),
-    enums (bare words), and `b64:` blobs. Unknown keys are an error, not ignored.
+    enums (bare words), and `b64:` blobs. The full grammar (escaping, number formatting,
+    whitespace, comments starting with `#`) is written down as a spec before the parser is
+    implemented. Print → parse → print must be byte-identical; this is fuzz-tested.
+  - **Command ids** are Brushye's own neutral names (`layer.set`, `stroke`, `history.undo`),
+    not copies of CSP menu names, so CSP's wording doesn't leak into the API. UI labels map to
+    commands through the registry.
   - **Versioning:** each command type has an integer version (`layer.set/2`). A missing
     `/n` means v1. The journal header carries the format version and app version. On load,
     old commands go through a chain of pure migration functions (`vN → vN+1`), each with
@@ -154,7 +171,10 @@ crates/
   - **Determinism:** commands carry every input that affects output, including the random
     seed, the full tool state snapshot (or a reference to a prior `tool.set` in the same
     journal), and ids. Ids are assigned by the command, never by the executor, so replay can't
-    diverge.
+    diverge. The journal keeps explicit ids; turning ids into layer names is only done when a
+    journal excerpt is exported as a reusable macro (not when journaling).
+  - **Seeded strokes:** the same `stroke` params with the same `seed` produce the same pixels.
+    A live stroke previews incrementally and commits as exactly that one command.
   - **Strokes:** `stroke` carries the full raw input stream as a `b64:` blob, so a journal line
     stays one line. The blob holds a little-endian header (sample count, field mask, units)
     followed by delta-encoded, zigzag + LEB128 varint samples:
@@ -163,20 +183,29 @@ crates/
     button). Raw device samples are stored **before** stabilization, so changing the stabilizer
     replays differently on purpose and the journal stays the truth. Fields that aren't present
     are omitted through the field mask (a mouse stroke has no pressure). A readable
-    alternative `samples=[x,y,p,t;…]` is accepted for hand-written scripts and tests.
-  - **Queries** use the same syntax with a `?` prefix (`?layer.list`, `?pixel L2 x=10 y=20`,
-    `?tool.get brush.size`) and return JSON. They never change state and never go into the
-    journal.
+    alternative `samples=[x,y,p,t;…]` is accepted for hand-written scripts and tests;
+    journals always write the blob.
+  - **Queries** are registry entries with `journal = false`. They are written with a `?` prefix
+    (`?layer.list`, `?pixel L2 x=10 y=20`, `?tool.get brush.size`) and return JSON. They never
+    change state and never go into the journal.
   - **Equivalent JSON form:** every command maps one-to-one to a JSON object
-    (`{"cmd":"layer.set","v":1,"args":{…}}`) for the MCP server and scripting hosts. The
-    text form is canonical in journals.
-- **Alternatives:** (a) JSON Lines as the canonical form: unambiguous, but noisy for
-  humans and roughly 3× larger. (b) A binary journal (e.g. postcard): compact, but not a
-  "string" and painful to diff or hand-write. (c) Lua/JS script as the journal: Turing-complete
-  scripts are hard to migrate and can't be inspected statically.
-- **Reason:** readable, diffable, greppable journals; strict parsing; compact strokes (a typical
-  2-second stroke at 200 Hz is roughly 2–4 KB of base64); and migrations make old journals
-  replayable forever.
+    (`{"cmd":"layer.set","v":1,"args":{…}}`) for the MCP server and scripting hosts. It is
+    generated from the same typed params. The text form is canonical in journals.
+- **Alternatives considered:**
+  (a) **photocraft's model** (the maintainer's Rust Photoshop rebuild, studied 2026-11-13):
+  a registry of ~700 dotted command ids, JSON params passed as untyped `serde_json::Value`
+  and parsed by hand per command, strokes as JSON arrays `[x,y,pressure,tiltX,tiltY,rotation,
+  time_ms,wheel]` plus a seed, an in-memory journal of `(id, params)`, and only a file-level
+  version on saved Actions. Rejected as the canonical format: JSON is noisy to read and diff,
+  JSON stroke arrays are roughly 3–5× larger than the blob (tens of MB per long session), and
+  there is no per-command versioning. Its registry, queries-as-commands, seeded strokes and
+  the goal of schema-checked params are adopted above.
+  (b) A binary journal (e.g. postcard): compact, but not a "string" and painful to diff or
+  hand-write. (c) Lua/JS script as the journal: Turing-complete scripts are hard to migrate
+  and can't be inspected statically.
+- **Reason:** readable, diffable, greppable journals; strict, typed parsing; compact strokes (a
+  typical 2-second stroke at 200 Hz is roughly 3–5 KB of base64); migrations make old journals
+  replayable forever; and the JSON form keeps MCP and scripting easy.
 
 ## D-012 Determinism strategy (CPU reference vs GPU tolerance) — PROPOSAL
 - **Date:** 2026-11-11
