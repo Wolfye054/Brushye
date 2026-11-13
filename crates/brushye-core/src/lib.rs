@@ -1,4 +1,5 @@
-//! Brushye core: document model (and later colour/blend math, brush engine, CPU renderer).
+//! Brushye core: document model, colour/blend math (`blend::math`), CPU reference renderer
+//! (`render`), and later the brush engine.
 //!
 //! No UI, GPU or OS dependencies (DECISIONS D-010). Documents are immutable values shared via
 //! `Arc`: every edit produces a new version that shares unchanged layers and tiles with the
@@ -12,6 +13,7 @@ pub mod blend;
 pub mod document;
 pub mod hash;
 pub mod ids;
+pub mod render;
 pub mod tile;
 
 pub use blend::BlendMode;

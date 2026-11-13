@@ -41,6 +41,13 @@ Alpha paths as above (exact tests). Normal colour as above (tolerance ±1 until 
 is understood). Other modes over a semi-transparent backdrop: tracked as an open gap (D-017
 tolerance policy).
 
+## Implementation note (M3, 2026-11-13)
+Rendering these documents through `render::flatten` showed that the **bottom layer on a canvas
+without paper is copied, not composited**: L-005's alpha rules match CSP when the backdrop alpha
+is the base layer's stored alpha. Compositing the base layer onto the empty canvas with the Normal
+rule would already lose 1 on some pixels (e.g. alpha 100 → 99). Inferred from this data at 100 %
+opacity, Normal mode; the bottom layer at lower opacity or in other modes is an open question.
+
 ## Open questions
 - The colour rule for non-Normal modes over a semi-transparent backdrop (most important gap).
 - Why the five "additive alpha" modes add alpha (and whether their colour rule differs too).

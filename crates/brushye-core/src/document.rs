@@ -56,6 +56,67 @@ pub struct Layer {
 }
 
 impl Layer {
+    /// Write a `w`×`h` block of straight RGBA8 pixels (row-major) with its top-left at
+    /// (`x`, `y`) in canvas pixels. Pixels outside `bounds` (canvas width/height) are skipped.
+    /// Tiles that end up fully transparent are dropped.
+    pub fn put_pixels(&mut self, bounds: (u32, u32), x: i64, y: i64, w: u32, h: u32, rgba: &[u8]) {
+        use crate::tile::TILE_SIZE;
+        let ts = TILE_SIZE as i64;
+        for row in 0..i64::from(h) {
+            let cy = y + row;
+            if cy < 0 || cy >= i64::from(bounds.1) {
+                continue;
+            }
+            for col in 0..i64::from(w) {
+                let cx = x + col;
+                if cx < 0 || cx >= i64::from(bounds.0) {
+                    continue;
+                }
+                let src = ((row * i64::from(w) + col) * 4) as usize;
+                let Some(p) = rgba.get(src..src + 4) else {
+                    continue;
+                };
+                let (tx, ty) = (cx.div_euclid(ts), cy.div_euclid(ts));
+                let (ix, iy) = (cx.rem_euclid(ts), cy.rem_euclid(ts));
+                if p[3] == 0 && self.tiles.get((tx as i32, ty as i32)).is_none() {
+                    continue;
+                }
+                let tile = self.tiles.get_mut((tx as i32, ty as i32));
+                let dst = ((iy * ts + ix) * 4) as usize;
+                tile.px[dst..dst + 4].copy_from_slice(p);
+            }
+        }
+        self.tiles.prune();
+    }
+
+    /// Fill the whole canvas area of the layer with one colour.
+    pub fn fill(&mut self, bounds: (u32, u32), c: Rgba8) {
+        let row: Vec<u8> =
+            c.0.iter()
+                .copied()
+                .cycle()
+                .take(bounds.0 as usize * 4)
+                .collect();
+        let mut block = Vec::with_capacity(row.len() * bounds.1 as usize);
+        for _ in 0..bounds.1 {
+            block.extend_from_slice(&row);
+        }
+        self.put_pixels(bounds, 0, 0, bounds.0, bounds.1, &block);
+    }
+
+    /// Pixel at canvas (`x`, `y`); transparent where no tile is stored.
+    pub fn pixel(&self, x: u32, y: u32) -> [u8; 4] {
+        use crate::tile::TILE_SIZE;
+        let (tx, ty) = (
+            (x as usize / TILE_SIZE) as i32,
+            (y as usize / TILE_SIZE) as i32,
+        );
+        let i = ((y as usize % TILE_SIZE) * TILE_SIZE + x as usize % TILE_SIZE) * 4;
+        self.tiles
+            .get((tx, ty))
+            .map_or([0; 4], |t| [t.px[i], t.px[i + 1], t.px[i + 2], t.px[i + 3]])
+    }
+
     pub fn new(id: LayerId, name: impl Into<String>, kind: LayerKind) -> Self {
         Self {
             id,
