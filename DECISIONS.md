@@ -304,16 +304,50 @@ crates/
 - **Reason:** matches CSP's observed undo behaviour, keeps replay exact (D-011/D-012), and
   structural sharing gives correct undo with no per-command undo code.
 
-## D-014 Native format `.brsh` — PROPOSAL
-- **Proposal:** a ZIP container (stored/deflate):
-  `manifest.json` (format version, app version), `document.json` (layer tree, properties,
-  ids), `tiles/<layer>/<tx>_<ty>.png` for non-empty tiles only, `thumbnail.png`, an optional
-  `journal.bcmd`, and `brushes/*.brshbrush` (user brushes are a JSON brush definition plus
-  tip/texture PNGs). The format is versioned and has forward migration.
-- **Alternatives:** an SQLite container (good for big docs and incremental save; revisit
-  after the alpha), or a custom binary format.
-- **Reason:** easy to inspect, robust tooling everywhere, and the same container style as
-  ORA, which makes ORA export trivial later.
+## D-014 Native format `.brsh` — ACCEPTED (2026-11-13)
+- **Date:** proposed 2026-11-11; accepted 2026-11-13 by the maintainer, with the refinements below.
+- **Decision:**
+  1. **Container: ZIP.** A `.brsh` file is a ZIP archive:
+     - `manifest.json`: format version, writing app version, and an optional feature list.
+     - `document.json`: canvas (size, dpi, paper), layer tree, layer properties, ids, and the
+       selection. This is the source of truth for structure.
+     - `layers/<layer-id>/tiles/<tx>_<ty>.zst`: one file per **non-empty** 256² tile (D-012).
+       It holds the raw tile pixels in the layer's pixel format, **zstd-compressed** and stored
+       uncompressed in the ZIP (no double compression). Lossless; empty tiles are omitted.
+     - `layers/<layer-id>/layer.json`: the layer's pixel format and tile size. The alpha writes
+       8-bit straight RGBA (D-012); the field leaves room for 16-bit later.
+     - `preview.png`: the **flattened image** at full size, so file browsers and other apps can
+       preview the document. Also `thumbnail.png` (max 256 px).
+     - `journal.bcmd` (optional, see 4).
+  2. **Fast saves:** the app keeps each tile's compressed bytes cached with a generation counter,
+     so a save recompresses only tiles that changed since they were last encoded. The whole ZIP
+     is still rewritten on every save.
+  3. **Crash-safe saves:** write to a temporary file in the same folder, flush, then atomically
+     rename it over the old file. A crash mid-save never damages the previous version.
+  4. **Journal: off by default, opt-in per document.** Normally the session journal (D-011) is a
+     separate file next to the document (`<name>.bcmd`). A document option embeds it as
+     `journal.bcmd`, for replay/debugging or sharing a reproducible file. It's off by default
+     because the journal contains everything ever done, including undone strokes, and grows large.
+  5. **Brushes are not stored in documents.** User brushes use a separate Brushye brush format and
+     a brush library: `.brshbrush`, a ZIP with `brush.json` (all brush settings, versioned like
+     commands) plus tip/texture PNGs. Embedding the brushes a document uses may come later as an
+     option.
+  6. **Versioning:** `manifest.json` carries an integer format version. Older files are migrated
+     on open (pure migration functions with golden-file tests, like command migrations in D-011).
+     A file from a **newer** format version is refused with a clear message, never half-read.
+     Unknown entries in a same-version file are an error in tests and a warning in the app.
+  7. **Inspection:** `brushye-cli dump file.brsh` prints the manifest, document tree and tile
+     statistics, and can extract layers as PNG (since the tiles are zstd, not PNG).
+- **Alternatives considered:** (a) PNG per tile (the 2026-11-11 proposal): easy to inspect with
+  any image tool, but PNG encoding is several times slower than zstd, which matters for saving
+  and autosaving big canvases. (b) An SQLite container: incremental saves and built-in crash
+  safety, but harder to inspect and with its own schema-migration burden. **Kept as the fallback**
+  if whole-file ZIP saves become too slow for large documents. (c) A custom binary format: no
+  tooling, no benefit over ZIP. (d) Always embedding the journal, or embedding brushes: larger
+  files and private history in every shared document.
+- **Reason:** simple, robust and inspectable (ZIP + JSON + a CLI dump), fast saves (zstd and
+  cached tiles), crash-safe, versioned like the command format, and the same container style as
+  ORA, which keeps ORA export easy later.
 
 ## D-015 Tablet input approach — PROPOSAL
 - **Proposal:** a `brushye-tablet` crate that produces a uniform `InputSample` stream.
@@ -331,6 +365,7 @@ crates/
 | `serde`, `serde_json` | document.json, query results, JSON command form | De facto standard; derives avoid hand-written codecs |
 | `png` | PNG I/O | Pure Rust, gives exact control over chunks (needed to strip/write ICC deterministically) |
 | `zip` | .brsh container | Pure Rust, mature |
+| `zstd` | .brsh tile compression (D-014) | Fast lossless compression; several times faster than PNG/deflate for save/autosave |
 | `base64` | stroke blobs | Small and standard |
 | `libm` | deterministic transcendental functions | Platform libm differs between OSes (D-012) |
 | `rand_pcg` (or a hand-written PCG32) | seeded jitter | Portable and reproducible |

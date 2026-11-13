@@ -112,9 +112,9 @@ command layer. Nothing changes state outside it.
 
 ## Current status
 Phase 1 (study & planning) is done. D-010 (crate layout), D-011 (command format), D-012
-(determinism) and D-013 (undo/redo) are ACCEPTED; the other DECISIONS.md proposals are still
-under review. Don't write application code that depends on a decision until it is marked
-ACCEPTED.
+(determinism), D-013 (undo/redo) and D-014 (.brsh format) are ACCEPTED; the other
+DECISIONS.md proposals are still under review. Don't write application code that depends on
+a decision until it is marked ACCEPTED.
 
 ## Alpha goal
 Basic drawing with custom brushes:

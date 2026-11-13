@@ -47,7 +47,9 @@ Ordering follows CLAUDE.md's priorities: command layer → brush engine → .sut
 
 ## M5 — Undo/redo + native format
 - Tile copy-on-write undo, history as commands.
-- `.brsh` save/load (D-014) with round-trip tests. User brush definitions saved in Brushye format.
+- `.brsh` save/load (D-014): ZIP + JSON + zstd tiles + flattened preview, crash-safe save,
+  round-trip and migration tests; `brushye-cli dump`.
+- User brushes saved as `.brshbrush` in a brush library (D-014).
 - **Exit:** save → load → replay gives the same hash; undo/redo fuzz tests pass.
 
 ## M6 — App shell + GPU canvas display
