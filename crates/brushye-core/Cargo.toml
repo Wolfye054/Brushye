@@ -1,0 +1,13 @@
+[package]
+name = "brushye-core"
+description = "Brushye document model, colour/blend math, brush engine and CPU reference renderer (DECISIONS D-010). No UI/GPU/OS dependencies."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]

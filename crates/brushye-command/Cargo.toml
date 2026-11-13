@@ -1,0 +1,19 @@
+[package]
+name = "brushye-command"
+description = "Brushye command layer: text/JSON command codec, versioning, executor, undo history, journal, queries (DECISIONS D-011, D-013)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+brushye-core = { path = "../brushye-core" }
+base64 = "0.22"
+serde_json = "1"
+
+[dev-dependencies]
+proptest = "1"
