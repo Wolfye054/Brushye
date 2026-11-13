@@ -111,9 +111,9 @@ command layer. Nothing changes state outside it.
   The crates are created when application work starts; a placeholder crate stands in until then.
 
 ## Current status
-Phase 1 (study & planning) is done. D-010 to D-015 (crate layout, command format,
-determinism, undo/redo, .brsh format, tablet input) are ACCEPTED; D-016 (dependencies) and
-D-017 (blend-mode strategy) are still under review. Don't write application code that depends
+Phase 1 (study & planning) is done. D-010 to D-016 (crate layout, command format,
+determinism, undo/redo, .brsh format, tablet input, dependencies) are ACCEPTED; D-017
+(blend-mode strategy) is still under review. Don't write application code that depends
 on a decision until it is marked ACCEPTED. Never copy code from the maintainer's other
 projects (photocraft, clipcraft); design ideas only.
 

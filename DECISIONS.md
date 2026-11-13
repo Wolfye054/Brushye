@@ -417,24 +417,54 @@ crates/
   maintainer's own desktop, and lets winit 0.31 replace two backends later without touching
   anything above the API.
 
-## D-016 Proposed dependencies (each still needs approval when introduced)
+## D-016 Dependencies — ACCEPTED (2026-11-13)
+- **Date:** list grown 2026-11-11 to 2026-11-13 with D-010–D-015; accepted 2026-11-13 by the
+  maintainer.
+- **Decision: the approved dependency list.** Each crate is added when the code that needs it is
+  written, not before.
+
 | Crate | Use | Why |
 |---|---|---|
-| `eframe`/`egui`, `wgpu` | UI, canvas | Mandated by CLAUDE.md |
+| `eframe`/`egui`, `wgpu` | UI, canvas display | Mandated by CLAUDE.md |
 | `serde`, `serde_json` | document.json, query results, JSON command form | De facto standard; derives avoid hand-written codecs |
-| `png` | PNG I/O | Pure Rust, gives exact control over chunks (needed to strip/write ICC deterministically) |
-| `zip` | .brsh container | Pure Rust, mature |
-| `zstd` | .brsh tile compression (D-014) | Fast lossless compression; several times faster than PNG/deflate for save/autosave |
-| `base64` | stroke blobs | Small and standard |
-| `libm` | deterministic transcendental functions | Platform libm differs between OSes (D-012) |
-| `rand_pcg` (or a hand-written PCG32) | seeded jitter | Portable and reproducible |
+| `schemars` | schemas generated from typed command params (D-011) | Keeps the MCP schema and UI forms in sync with the param structs |
+| `png` | PNG import/export, `preview.png` | Pure Rust, exact control over chunks (strip/write ICC deterministically) |
+| `zip` | .brsh / .brshbrush container (D-014) | Pure Rust, mature. **Version pinned exactly** (the crate had a turbulent maintainer change and yanked releases in 2024); bumps are reviewed. Fallback: our own minimal stored-only ZIP code |
+| `zstd` | .brsh tile compression (D-014) | Best speed/ratio for save and autosave. The **one C dependency** (builds libzstd via `cc`), accepted for that reason; pure-Rust fallback: `lz4_flex` |
+| `base64` | stroke sample blobs (D-011) | Small and standard |
+| `libm` | deterministic transcendental functions (D-012) | Platform libm differs between OSes |
+| `arc-swap` | lock-free current document version (D-013 snapshots) | Readers (UI, autosave, export) never block the executor |
+| `rayon` | per-tile parallel compositing (D-012) | Standard work-stealing pool; only used where tiles are independent, so results stay deterministic |
 | `thiserror` | error types in library crates | Removes boilerplate, no runtime cost |
-| `rmcp` | MCP server | Official Rust MCP SDK |
+| `tracing` | logging/diagnostics | Standard structured logging; zero cost when disabled |
+| `raw-window-handle` | window/display handles for the tablet backends (D-015) | The standard interop crate eframe/winit already use |
 | `wayland-client`, `wayland-protocols` | Wayland tablet backend (D-015) | Maintained (Smithay) pure-Rust Wayland client + generated protocol bindings |
 | `x11rb` | X11/Xwayland tablet backend (D-015) | Pure-Rust X11 client with XInput2; no C library needed |
 | `windows` | Windows Ink / WinTab backend (D-015) | Microsoft's official Win32 bindings |
 | `objc2`, `objc2-app-kit` | macOS tablet backend (D-015) | Maintained, type-safe AppKit bindings |
-| `insta` (dev) | golden tests for codec/migrations | Snapshot review workflow |
+| `rmcp` | MCP server (M9) | Official Rust MCP SDK |
+| `insta` (dev) | golden tests for codecs and migrations | Snapshot review workflow |
+| `proptest` (dev) | property tests; print → parse round-trip fuzzing of the command codec (D-011) | Standard property-testing crate |
+
+- **Not a dependency: the random number generator.** Brushye uses its **own PCG32**
+  (~20 lines, in `brushye-core`), frozen with golden tests. Journals must replay identically
+  forever (D-011/D-012), and a third-party crate update could change the output stream.
+- **Policy:**
+  1. Approving D-016 approves the list above. Anything new gets a row with its reason here
+     **before** it's added. The maintainer is asked first if it is heavy: a C dependency, a large
+     framework, or anything that touches determinism or file formats.
+  2. **`cargo-deny` runs in CI** (`deny.toml`). Licenses: every dependency, including transitive
+     ones, must be compatible with MIT OR Apache-2.0 (permissive licenses only, no GPL/AGPL/LGPL).
+     It also checks security advisories, banned/duplicate crates, and that crates come only from
+     crates.io.
+  3. `Cargo.lock` is committed; builds are reproducible.
+  4. **No code from the maintainer's other projects** (photocraft, clipcraft), as a dependency or
+     copied (see D-015).
+- **Alternatives considered:** `rand_pcg` (replaced by our own PCG32, see above); `lz4_flex`
+  instead of zstd (pure Rust, larger files; kept as fallback); our own ZIP code instead of `zip`
+  (kept as fallback); `image` instead of `png` (much larger, not needed).
+- **Reason:** CLAUDE.md requires a stated reason for every dependency. The list stays small,
+  mostly pure Rust, and license-compatible, and the policy keeps it that way.
 
 ## D-017 Blend-mode implementation strategy — PROPOSAL
 - **Proposal:** implement each separable mode as the integer formula that reproduces the

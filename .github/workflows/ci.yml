@@ -31,3 +31,10 @@ jobs:
         run: cargo build --workspace --all-targets --locked
       - name: test
         run: cargo test --workspace --locked
+
+  deny:
+    name: cargo-deny (licenses, advisories, sources)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
