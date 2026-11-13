@@ -107,14 +107,16 @@ command layer. Nothing changes state outside it.
 - `docs/research/`: manual study notes (paraphrased, with source URLs).
 - `tools/observe/`: UI driver and analysis scripts for automated observation.
 - `crates/`: Rust workspace. Layout per DECISIONS D-010 (accepted): brushye-core, brushye-command,
-  brushye-format, brushye-app, brushye-cli. Only brushye-app may use UI/GPU/OS-input crates.
-  The crates are created when application work starts; a placeholder crate stands in until then.
+  brushye-format, brushye-app, brushye-cli, plus brushye-tablet (M1). Only brushye-app and
+  brushye-tablet may use UI/GPU/OS-input crates. Crates are created as their milestone starts.
+- `docs/reports/`: milestone reports.
 
 ## Current status
 Phase 1 (study & planning) is done, and all Phase 1 proposals (D-010 to D-017: crate
 layout, command format, determinism, undo/redo, .brsh format, tablet input, dependencies,
-blend-mode strategy) are ACCEPTED. Next: M1 (tablet input spike) and, before M3, the
-remaining blending observations (D-017). New architectural decisions still need maintainer
+blend-mode strategy) are ACCEPTED. M1 (tablet spike) is done on Linux; Windows/macOS
+backends are deferred (no test hardware). Pre-M3 blending observations are done (L-003..L-007).
+Now: M2 (document model + command layer). New architectural decisions still need maintainer
 approval first (see Working agreement). Never copy code from the maintainer's other
 projects (photocraft, clipcraft); design ideas only.
 

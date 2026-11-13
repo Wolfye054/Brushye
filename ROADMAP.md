@@ -11,7 +11,9 @@ Ordering follows CLAUDE.md's priorities: command layer → brush engine → .sut
 - Repo skeleton + CI on Windows/macOS/Linux.
 - **Exit:** maintainer approves or amends the proposals.
 
-## M1 — Tablet input spike (top technical risk)
+## M1 — Tablet input spike (top technical risk) — DONE on Linux (2026-11-13), Windows/macOS deferred
+- Report: `docs/reports/M1-tablet-spike.md`. Native Wayland verified with the maintainer's pen;
+  X11 verified with the virtual stylus. Windows/macOS backends deferred (no test hardware).
 - `brushye-tablet` crate with the uniform pen-event API and both delivery modes (D-015), plus a
   small egui test app that logs the event stream and draws a pressure trace.
 - Backends: Wayland (own, same connection, version negotiation), X11/XInput2, Windows Ink
