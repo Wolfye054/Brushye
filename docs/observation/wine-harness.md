@@ -54,6 +54,9 @@ Stop: `WINEPREFIX=~/.wine-csp-observe wineserver -k; pkill -f 'Xvfb :77'`.
 | Layer palette blend dropdown | (1765, 605); item *i* at (1760, 71 + 19·i) |
 | Layer palette delete layer | (1912, 649) |
 | Help > Version information | (437, 41) → (513, 239) |
+| File > Pen Pressure Settings | (28, 41) → (118, 621) |
+| Tool Property: size / opacity dynamics buttons | (243, 256) / (243, 291) |
+| Tool Property: Sub Tool Detail toggle | (256, 504) |
 
 These depend on the workspace layout. Recheck with a screenshot if the layout changes.
 
@@ -86,6 +89,14 @@ Rules learned the hard way:
 - Quit CSP with Ctrl+Q → Don't Save, not `wineserver -k`, or the export settings don't persist.
 - Never `pkill -f 'Xorg :78'`, because it matches the calling shell too.
   Use `pkill -f '^/usr/libexec/Xorg :78'`.
+- The Sub Tool Detail palette and dynamics popups close on any click outside them, and the
+  next click then lands on the canvas and paints. Close popups with the same toggle button
+  that opened them, and check for canvas changes before drawing.
+- Values typed into CSP number fields only commit on Enter (Tab leaves the slider unchanged).
+- Global pen pressure "Reset to default" only applies after Check adjusted settings → Done.
+- Pressure-spec helpers: `pen_grid.py` (21 constant-pressure strokes), `csp_export_png.sh`
+  (export, pressing OK only if the dialog is really open), `analyze_pen_grid.py` (width),
+  `analyze_pen_grid_alpha.py` (centre-line alpha).
 - Screenshot-check after each export. A click meant for a dialog that didn't open lands on the
   canvas and paints a dot.
 
