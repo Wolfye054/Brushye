@@ -1,0 +1,19 @@
+[package]
+name = "brushye-cli"
+description = "Headless Brushye: run scripts, replay journals, answer queries (DECISIONS D-010, D-011)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[[bin]]
+name = "brushye"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+brushye-command = { path = "../brushye-command" }
+serde_json = "1"

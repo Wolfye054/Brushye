@@ -25,7 +25,8 @@ Ordering follows CLAUDE.md's priorities: command layer → brush engine → .sut
 - **Exit:** pressure + tilt + eraser end confirmed on native Wayland and ≥ 1 other OS; a written
   risk report for the rest.
 
-## M2 — Document model + command layer core (headless)
+## M2 — Document model + command layer core (headless) — DONE locally (2026-11-13); cross-OS check pending first CI run
+- Report: `docs/reports/M2-document-and-commands.md`.
 - `brushye-core` (model module): document, layer tree (raster + paper), tiles, ids.
 - `brushye-command`: text codec (parse/print round-trip, fuzzed), versioning + migration
   framework, executor, queries, session journal.

@@ -191,8 +191,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "brushye"
+name = "brushye-cli"
 version = "0.0.0"
+dependencies = [
+ "brushye-command",
+ "serde_json",
+]
 
 [[package]]
 name = "brushye-command"
