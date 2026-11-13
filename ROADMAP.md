@@ -33,11 +33,14 @@ Ordering follows CLAUDE.md's priorities: command layer → brush engine → .sut
 - **Exit:** a journal replays to an identical document hash on all 3 CI OSes.
 
 ## M3 — CPU reference compositor
+- **Before M3 (D-017):** run the remaining blending observations (non-separable sweeps,
+  Multiply with alpha, L-003 opacity, L-004 folders/Through, L-005 transparent backdrop,
+  L-006 clipping/lock) so the compositor is built against observed behaviour.
 - `brushye-core` (color module): all 28 blend modes, opacity, straight-alpha compositing, paper.
 - **Exact-match tests** against the observed CSP tables in `specs/behavior/blending/`.
 - PNG export (`brushye-format`), `brushye render doc out.png`.
-- **Exit:** every *observed* blend spec passes bit-exactly. Modes whose formula is still
-  open use LUTs (D-017).
+- **Exit:** every *observed* blend spec passes bit-exactly (formulas, or observed tables for
+  Overlay/Hard light/Vivid light, D-017). Open cases have stated tolerances, listed in the report.
 
 ## M4 — Brush engine v1 (headless)
 - Input processing, stabilization, dynamics + curves, round tip (hardness, AA levels,

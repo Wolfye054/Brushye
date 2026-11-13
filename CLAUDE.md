@@ -111,10 +111,11 @@ command layer. Nothing changes state outside it.
   The crates are created when application work starts; a placeholder crate stands in until then.
 
 ## Current status
-Phase 1 (study & planning) is done. D-010 to D-016 (crate layout, command format,
-determinism, undo/redo, .brsh format, tablet input, dependencies) are ACCEPTED; D-017
-(blend-mode strategy) is still under review. Don't write application code that depends
-on a decision until it is marked ACCEPTED. Never copy code from the maintainer's other
+Phase 1 (study & planning) is done, and all Phase 1 proposals (D-010 to D-017: crate
+layout, command format, determinism, undo/redo, .brsh format, tablet input, dependencies,
+blend-mode strategy) are ACCEPTED. Next: M1 (tablet input spike) and, before M3, the
+remaining blending observations (D-017). New architectural decisions still need maintainer
+approval first (see Working agreement). Never copy code from the maintainer's other
 projects (photocraft, clipcraft); design ideas only.
 
 ## Alpha goal
