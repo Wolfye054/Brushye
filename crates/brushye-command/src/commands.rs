@@ -1,11 +1,12 @@
 //! The command and query registry (M2 set). Each entry declares its name, version, class and
 //! typed parameters; parsing, printing, JSON and the schema all derive from it (D-011).
 
+use brushye_core::brush::{Aa, Curve, Gap};
 use brushye_core::{BlendMode, LayerId, LayerKind, Rgba8};
 use serde_json::{Value as Json, json};
 
 use crate::params;
-use crate::params::{Arg, Blob, JsonReader, Mode, ParamSpec, Reader};
+use crate::params::{Arg, Blob, JsonReader, Mode, ParamSpec, Reader, Samples};
 use crate::syntax::{RawLine, Value};
 
 /// How a command interacts with history (D-013, spec H-001).
@@ -179,6 +180,29 @@ params! {
     }
 }
 params! {
+    /// Paint one brush stroke (round tip) from recorded input samples. Settings left out take
+    /// their defaults; `*_pressure` turns on pen pressure for that setting with the given
+    /// minimum value, shaped by the optional `*_curve`. Pressure in `samples` is taken after
+    /// the global pen pressure adjustment.
+    pub struct BrushStroke {
+        layer: LayerId = pos "Target layer",
+        color: Rgba8 = key "Ink colour #rrggbb",
+        size: f64 = key "Brush size (diameter) in px",
+        aa: Option<Aa> = opt "Anti-aliasing (default middle)",
+        hardness: Option<u8> = opt "Tip hardness 1 (soft) ..= 5 (hard, default)",
+        opacity: Option<u8> = opt "Ink opacity in percent (default 100)",
+        density: Option<u8> = opt "Brush density in percent (default 100)",
+        gap: Option<Gap> = opt "Dab gap: narrow, normal (default), wide, or percent of size",
+        size_pressure: Option<u8> = opt "Pen pressure controls size; minimum in percent",
+        size_curve: Option<Curve> = opt "Size pressure curve points [x,y;…]",
+        opacity_pressure: Option<u8> = opt "Pen pressure controls opacity; minimum in percent",
+        opacity_curve: Option<Curve> = opt "Opacity pressure curve points [x,y;…]",
+        density_pressure: Option<u8> = opt "Pen pressure controls density; minimum in percent",
+        density_curve: Option<Curve> = opt "Density pressure curve points [x,y;…]",
+        samples: Samples = key "Input samples (b64:… or [x,y,p,t;…])",
+    }
+}
+params! {
     /// Undo one step.
     pub struct HistoryUndo {}
 }
@@ -341,6 +365,7 @@ registry! {
         LayerSet(LayerSet) = "layer.set" v 1 Undoable "Set layer properties (name, opacity, blend, locks)",
         LayerFill(LayerFill) = "layer.fill" v 1 Undoable "Fill a layer with one colour",
         LayerPixels(LayerPixels) = "layer.pixels" v 1 Undoable "Write raw RGBA pixels into a layer",
+        BrushStroke(BrushStroke) = "brush.stroke" v 1 Undoable "Paint one brush stroke from input samples",
         LayerShow(LayerShow) = "layer.show" v 1 AppState "Show or hide a layer (not undoable, as in CSP)",
         LayerSelect(LayerSelect) = "layer.select" v 1 AppState "Make a layer the active layer",
         HistoryUndo(HistoryUndo) = "history.undo" v 1 History "Undo one step",

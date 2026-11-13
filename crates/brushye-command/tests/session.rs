@@ -291,6 +291,90 @@ fn golden_document_hash_is_platform_independent() {
     assert_eq!(q(&mut s, "?doc.hash"), "4c9b1d8e370d0616");
 }
 
+const STROKE: &str = "\
+doc.new 64 48 paper=none
+layer.new L1
+brush.stroke L1 color=#203040 size=9.5 aa=weak opacity=80 density=60 gap=wide size_pressure=20 size_curve=[0.5,0.25] samples=[4,4,0.2,0;30,10.5,0.9,8000;50,40,0.5,16000]
+brush.stroke L1 color=#ff0000 size=12 hardness=2 gap=37 samples=[10,40,1,0;40,20,1,5000]
+";
+
+#[test]
+fn brush_strokes_replay_undo_and_print_samples_as_blobs() {
+    let mut s = Session::new();
+    run(&mut s, STROKE);
+    let hash = q(&mut s, "?doc.hash");
+    let journal = s.journal_text();
+    // Matrix samples are journaled as the canonical blob; defaults are omitted.
+    let line = journal
+        .lines()
+        .find(|l| l.contains("brush.stroke") && l.contains("#203040"))
+        .unwrap_or_else(|| panic!("{journal}"));
+    assert!(line.contains("samples=b64:"), "{line}");
+    assert!(!line.contains("hardness="), "{line}");
+    assert!(line.contains("size_curve=[0.5,0.25]"), "{line}");
+    // Replay reproduces the document exactly.
+    let mut r = Session::replay(&journal).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(q(&mut r, "?doc.hash"), hash);
+    assert_eq!(r.journal_text(), journal);
+    // Ink landed, and each stroke is one undo step.
+    assert_ne!(q(&mut s, "?layer.pixel L1 x=30 y=10")[3], 0);
+    run(&mut s, "history.undo\nhistory.undo");
+    assert_eq!(q(&mut s, "?layer.get L1")["tiles"], 0);
+}
+
+#[test]
+fn brush_stroke_rejects_bad_settings_without_side_effects() {
+    let mut s = Session::new();
+    run(&mut s, "doc.new 32 32\nlayer.new L1");
+    for bad in [
+        "brush.stroke L1 color=#000000 size=0 samples=[1,1,1,0]",
+        "brush.stroke L1 color=#000000 size=5 hardness=6 samples=[1,1,1,0]",
+        "brush.stroke L1 color=#000000 size=5 opacity=101 samples=[1,1,1,0]",
+        "brush.stroke L1 color=#00000080 size=5 samples=[1,1,1,0]",
+        "brush.stroke L1 color=#000000 size=5 size_curve=[0.5,0.2] samples=[1,1,1,0]",
+        "brush.stroke L1 color=#000000 size=5 size_pressure=0 size_curve=[0.5,0.2;0.4,0.3] samples=[1,1,1,0]",
+        "brush.stroke L1 color=#000000 size=5 gap=huge samples=[1,1,1,0]",
+        "brush.stroke L1 color=#000000 size=5 samples=[]",
+        "brush.stroke L9 color=#000000 size=5 samples=[1,1,1,0]",
+    ] {
+        assert!(s.run_line(bad).is_err(), "{bad}");
+    }
+    run(&mut s, "layer.set L1 locked=true");
+    assert!(
+        s.run_line("brush.stroke L1 color=#000000 size=5 samples=[1,1,1,0]")
+            .is_err()
+    );
+    assert_eq!(
+        q(&mut s, "?history")["steps"].as_array().map(Vec::len),
+        Some(3)
+    );
+}
+
+#[test]
+fn brush_stroke_respects_lock_transparency() {
+    let mut s = Session::new();
+    run(
+        &mut s,
+        "doc.new 16 16 paper=none\nlayer.new L1\nlayer.pixels L1 x=2 y=2 w=1 h=1 data=b64:AAAA/w==\nlayer.set L1 lock_alpha=true\nbrush.stroke L1 color=#ffffff size=12 samples=[3,3,1,0]",
+    );
+    assert_eq!(
+        q(&mut s, "?layer.pixel L1 x=2 y=2"),
+        serde_json::json!([255, 255, 255, 255])
+    );
+    assert_eq!(
+        q(&mut s, "?layer.pixel L1 x=4 y=4"),
+        serde_json::json!([0, 0, 0, 0])
+    );
+}
+
+/// Cross-platform golden value for brush output (D-012): CI runs this on all three OSes.
+#[test]
+fn golden_brush_hash_is_platform_independent() {
+    let mut s = Session::new();
+    run(&mut s, STROKE);
+    assert_eq!(q(&mut s, "?doc.hash"), "cc2408a09a327ca2");
+}
+
 #[test]
 fn migration_engine_runs_the_chain() {
     fn v1_to_v2(mut r: RawLine) -> Result<RawLine, String> {
@@ -425,6 +509,68 @@ mod roundtrip {
                         data: brushye_command::params::Blob(data)
                     }
                 )),
+            (
+                id(),
+                any::<[u8; 3]>(),
+                0.1f64..500.0,
+                proptest::option::of(proptest::sample::select(vec![
+                    brushye_core::brush::Aa::None,
+                    brushye_core::brush::Aa::Strong
+                ])),
+                proptest::option::of(1u8..=5),
+                proptest::option::of(prop_oneof![
+                    Just(brushye_core::brush::Gap::Narrow),
+                    (0.1f64..1000.0).prop_map(brushye_core::brush::Gap::Fixed)
+                ]),
+                proptest::option::of(0u8..=100),
+                proptest::collection::vec((0.01f64..0.99, 0.0f64..=1.0), 0..4),
+                proptest::collection::vec((-50.0f64..500.0, -50.0f64..500.0, 0.0f32..=1.0), 1..20),
+            )
+                .prop_map(
+                    |(layer, c, size, aa, hardness, gap, size_pressure, pts, smp)| {
+                        let mut xs: Vec<f64> = pts.iter().map(|p| p.0).collect();
+                        xs.sort_by(f64::total_cmp);
+                        xs.dedup();
+                        let curve = brushye_core::brush::Curve::new(
+                            xs.iter().zip(&pts).map(|(&x, p)| [x, p.1]).collect(),
+                        )
+                        .ok()
+                        .filter(|_| size_pressure.is_some());
+                        let samples = smp
+                            .iter()
+                            .enumerate()
+                            .map(|(i, &(x, y, p))| brushye_core::input::Sample {
+                                x,
+                                y,
+                                t_us: i as u32 * 4000,
+                                pressure: Some(p),
+                                tilt: None,
+                                twist: None,
+                                eraser: false,
+                                barrel: [false; 2],
+                            })
+                            .collect::<Vec<_>>();
+                        Command::BrushStroke(BrushStroke {
+                            layer,
+                            color: Rgba8([c[0], c[1], c[2], 255]),
+                            size,
+                            aa,
+                            hardness,
+                            opacity: None,
+                            density: Some(50),
+                            gap,
+                            size_pressure,
+                            size_curve: curve,
+                            opacity_pressure: None,
+                            opacity_curve: None,
+                            density_pressure: None,
+                            density_curve: None,
+                            samples: brushye_command::params::Samples(
+                                brushye_core::input::canonical(&samples).unwrap_or_default(),
+                            ),
+                        })
+                    }
+                ),
         ]
     }
 

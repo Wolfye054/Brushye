@@ -266,6 +266,111 @@ macro_rules! word_arg {
 
 word_arg!(BlendMode, "blend mode");
 word_arg!(LayerKind, "layer kind");
+word_arg!(
+    brushye_core::brush::Aa,
+    "anti-aliasing (none|weak|middle|strong)"
+);
+
+/// Brush gap: a preset word (`narrow`, `normal`, `wide`) or a fixed gap in percent of size.
+impl Arg for brushye_core::brush::Gap {
+    const KIND: &'static str = "gap (narrow|normal|wide or percent of size)";
+    fn from_value(v: &Value) -> Result<Self, String> {
+        use brushye_core::brush::Gap;
+        match v {
+            Value::Word(w) => match w.as_str() {
+                "narrow" => Ok(Gap::Narrow),
+                "normal" => Ok(Gap::Normal),
+                "wide" => Ok(Gap::Wide),
+                _ => Err(format!(
+                    "unknown gap '{w}' (narrow|normal|wide or a number)"
+                )),
+            },
+            Value::Num(_) => f64::from_value(v).map(Gap::Fixed),
+            other => Err(want("gap", other)),
+        }
+    }
+    fn to_value(&self) -> Value {
+        use brushye_core::brush::Gap;
+        match self {
+            Gap::Narrow => Value::Word("narrow".into()),
+            Gap::Normal => Value::Word("normal".into()),
+            Gap::Wide => Value::Word("wide".into()),
+            Gap::Fixed(v) => v.to_value(),
+        }
+    }
+    fn to_json(&self) -> Json {
+        match self.to_value() {
+            Value::Word(w) => Json::String(w),
+            _ => match self {
+                brushye_core::brush::Gap::Fixed(v) => v.to_json(),
+                _ => Json::Null,
+            },
+        }
+    }
+    fn from_json(j: &Json) -> Result<Self, String> {
+        match j {
+            Json::String(s) => Self::from_value(&Value::Word(s.clone())),
+            Json::Number(n) => n
+                .as_f64()
+                .map(brushye_core::brush::Gap::Fixed)
+                .ok_or_else(|| "bad gap number".into()),
+            _ => Err("expected a gap word or number in JSON".into()),
+        }
+    }
+}
+
+/// Pressure curve: interior control points as a matrix `[x,y;x,y;…]` (JSON: `[[x,y],…]`).
+impl Arg for brushye_core::brush::Curve {
+    const KIND: &'static str = "curve points [x,y;…]";
+    fn from_value(v: &Value) -> Result<Self, String> {
+        let Value::Matrix(rows) = v else {
+            return Err(want("curve points [x,y;…]", v));
+        };
+        let mut pts = Vec::with_capacity(rows.len());
+        for (i, r) in rows.iter().enumerate() {
+            let [x, y] = r.as_slice() else {
+                return Err(format!("curve point {i} needs exactly x,y"));
+            };
+            let num = |s: &String| f64::from_value(&Value::Num(s.clone()));
+            pts.push([num(x)?, num(y)?]);
+        }
+        brushye_core::brush::Curve::new(pts).map_err(|e| e.to_string())
+    }
+    fn to_value(&self) -> Value {
+        Value::Matrix(
+            self.points()
+                .iter()
+                .map(|p| {
+                    p.iter()
+                        .map(|v| match v.to_value() {
+                            Value::Num(s) => s,
+                            _ => String::new(),
+                        })
+                        .collect()
+                })
+                .collect(),
+        )
+    }
+    fn to_json(&self) -> Json {
+        Json::Array(
+            self.points()
+                .iter()
+                .map(|p| Json::Array(vec![p[0].to_json(), p[1].to_json()]))
+                .collect(),
+        )
+    }
+    fn from_json(j: &Json) -> Result<Self, String> {
+        let rows = j.as_array().ok_or("expected [[x,y],…] in JSON")?;
+        let mut pts = Vec::with_capacity(rows.len());
+        for r in rows {
+            match r.as_array().map(Vec::as_slice) {
+                Some([x, y]) => pts.push([f64::from_json(x)?, f64::from_json(y)?]),
+                _ => return Err("each curve point must be [x,y]".into()),
+            }
+        }
+        brushye_core::brush::Curve::new(pts).map_err(|e| e.to_string())
+    }
+}
 
 /// Parse a single value from its text form (used for JSON strings in text syntax).
 pub fn text_value(s: &str) -> Result<Value, String> {

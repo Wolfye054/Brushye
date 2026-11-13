@@ -13,6 +13,7 @@
 
 use std::sync::Arc;
 
+use brushye_core::brush::{BrushSettings, Curve, Dynamics, HARDNESS_MAX};
 use brushye_core::document::DocError;
 use brushye_core::{Document, Layer, LayerId, LayerKind, Rgba8};
 use serde_json::{Value as Json, json};
@@ -592,6 +593,16 @@ fn edit(d: &mut Document, cmd: &Command) -> Result<(), ExecError> {
                 .collect();
             write_pixels(d, p.layer, 0, 0, w, h, &block)?;
         }
+        Command::BrushStroke(p) => {
+            let settings = brush_settings(p)?;
+            let bounds = (d.width, d.height);
+            let l = d.layer_mut(p.layer)?;
+            if l.locked {
+                return Err(DocError::LayerLocked(p.layer).into());
+            }
+            brushye_core::brush::stroke(l, bounds, &settings, &p.samples.0)
+                .map_err(|e| ExecError(e.to_string()))?;
+        }
         Command::LayerPixels(p) => {
             let need = u64::from(p.w) * u64::from(p.h) * 4;
             if p.data.0.len() as u64 != need {
@@ -610,6 +621,51 @@ fn edit(d: &mut Document, cmd: &Command) -> Result<(), ExecError> {
         }
     }
     Ok(())
+}
+
+/// Brush settings of a `brush.stroke` command (validated by the engine).
+fn brush_settings(p: &commands::BrushStroke) -> Result<BrushSettings, ExecError> {
+    if p.color.0[3] != 255 {
+        return Err(ExecError(
+            "brush.stroke: color must be opaque (#rrggbb); use opacity=… for transparency".into(),
+        ));
+    }
+    let pct = |name: &str, v: Option<u8>, default: f64| -> Result<f64, ExecError> {
+        match v {
+            None => Ok(default),
+            Some(v) if v <= 100 => Ok(f64::from(v) / 100.0),
+            Some(v) => Err(ExecError(format!("brush.stroke: {name} {v} is over 100"))),
+        }
+    };
+    let dynamics = |name: &str,
+                    min: Option<u8>,
+                    curve: &Option<Curve>|
+     -> Result<Option<Dynamics>, ExecError> {
+        match (min, curve) {
+            (None, None) => Ok(None),
+            (None, Some(_)) => Err(ExecError(format!(
+                "brush.stroke: {name}_curve needs {name}_pressure=…"
+            ))),
+            (Some(m), c) => Ok(Some(Dynamics {
+                min: pct(&format!("{name}_pressure"), Some(m), 0.0)?,
+                curve: c.clone().unwrap_or_default(),
+            })),
+        }
+    };
+    let s = BrushSettings {
+        color: [p.color.0[0], p.color.0[1], p.color.0[2]],
+        size: p.size,
+        aa: p.aa.unwrap_or_default(),
+        hardness: p.hardness.unwrap_or(HARDNESS_MAX),
+        density: pct("density", p.density, 1.0)?,
+        opacity: pct("opacity", p.opacity, 1.0)?,
+        gap: p.gap.unwrap_or_default(),
+        size_pressure: dynamics("size", p.size_pressure, &p.size_curve)?,
+        opacity_pressure: dynamics("opacity", p.opacity_pressure, &p.opacity_curve)?,
+        density_pressure: dynamics("density", p.density_pressure, &p.density_curve)?,
+    };
+    s.validate().map_err(|e| ExecError(e.to_string()))?;
+    Ok(s)
 }
 
 /// Text of a single parameter value (for error messages and tools).
