@@ -1,42 +1,53 @@
 # B-001 Round tip: single-dab profile vs size and anti-aliasing
-- Status: draft (automation path demonstrated, see Observations)
+- Status: **observed** (AA Weak/Middle/Strong exact; AA None edge-tie rule open)
 - CSP version: 1.13.2 (PRO, 64-bit, build 202301210208)
-- Needs: automated-Wine OK (mouse; no pressure dynamics involved)
+- Date / method / observer: 2026-11-13 / automated-Wine + virtual stylus (`vpen.py`, Xorg :78
+  libinput → Wine wintab) / Claude. Flag `verify-native` only for the AA None tie rule.
 
-## Purpose
-Pin down the exact alpha profile of one dab of a circle tip: edge position, how
-fractional sizes rasterize, and what each AA level (None/Weak/Middle/Strong) does to the edge.
+## Setup (as run; deviations from the draft marked ▲)
+1. ▲ Canvas 600×400 px, 72 dpi, paper off (exports carry alpha), one raster layer, 100 % zoom,
+   canvas origin at screen (649, 362). ▲ Main colour reddish (analysis uses alpha only).
+2. Sub tool "Obs pen" (duplicate of Pen > G-pen), settings read from Sub Tool Detail
+   (screenshots in `obs-out/brush-settings/`, not committed): Circle tip, hardness max
+   (5 of 5), thickness 100, angle 0, density 100 and opacity 100 with no dynamics, size with
+   no dynamics, ink Normal, no colour mixing/jitter, spray/texture/dual brush/watercolor edge
+   off, gap Normal, Correct velocity input ON, stabilization 0, adjust by speed off,
+   starting/ending none, "At least 1 pixel" off.
+3. ▲ One dab = pen `in`, move, `down`, move at pressure 1, `up`, `out` with no motion while down
+   (`dabs_script` in the run notes). This places exactly one dab.
+4. ▲ Grid, 8 sizes {0.7, 1, 1.5, 2, 3, 4.5, 10, 25.3} in rows y = 25 + 46·r. Three columns
+   with the pen sent to (60.5, y+0.5) (pixel centre), (200.75, y+0.5) (quarter offset), and
+   (341.0, y+1.0) (pixel corner). One export per AA level: `data/B001_aa0..3.png`.
+   vpen resolves positions to 0.1 px, so column 1 actually lands at x = 200.8.
 
-## Setup (exact)
-1. File > New: 128×128 px, 72 dpi, paper **off/transparent** (or delete the paper layer),
-   expression colour Color.
-2. One raster layer. Main colour #000000.
-3. Make a new custom sub tool (Pen group, "Create custom sub tool", raster). In Sub Tool Detail:
-   Brush tip = Circle, Hardness = max, Thickness 100, Angle 0, Brush density 100, Opacity 100,
-   Ink blending mode Normal, every dynamics OFF (size, opacity, density), Stabilization 0,
-   Starting and ending off, Texture off, Spray off.
+## Results
+Let d be the distance from the dab centre to the pixel centre, R = size/2, and
+8-bit alpha = ⌊65535·c⌋ >> 8 (**truncation**, see B-003).
+- **AA Weak/Middle/Strong:** c = min(R,1) · clamp((max(R,1) − d)/W, 0, 1),
+  W = max(1, min(W_L, R)), W_L = 1.5 / 2.5 / 3.5.
+  - For size ≥ 2 this is a linear ramp of width W ending at R.
+  - Below 2 px, the dab keeps radius 1 and scales its amplitude by R. Example: size 1 at a
+    pixel corner gives 4 × 37.
+  - Sizes ≤ 3 are identical across the three levels.
+- **AA None:** alpha 255 if d ≤ R (closed), else 0. There is no minimum pixel: size 0.7 at a
+  pixel corner draws nothing.
+- Exactness, from `b001_check.py data`, with no free parameters:
 
-## Steps (exact)
-For each size in {1, 1.5, 2, 3, 4.5, 10, 25.3} px and each AA in {None, Weak, Middle, Strong}:
-1. Set size and AA.
-2. Canvas at 100 % zoom. Mouse-click once (press and release, no motion) at canvas pixel
-   centre (64.5, 64.5) (screen → canvas mapping verified by a 1 px test dot first).
-3. Export (Single Layer) .png, RGB, no scaling, transparency kept. File `B001_s<size>_aa<level>.png`.
-4. Undo (Ctrl+Z) before the next one.
-Repeat step 2 at sub-pixel offsets (64.25, 64.5) and (64.0, 64.0) for sizes 1, 3, 10.
+  | AA | px exact | dabs with any error |
+  |---|---|---|
+  | Weak | 1824/1824 (100 %) | 0/24 |
+  | Middle | 1824/1824 (100 %) | 0/24 |
+  | Strong | 99.6 %, max error 1 | 2/24 (size 25.3, 7 px) |
+  | None | 1836/1860 (98.7 %) | 9/24 |
 
-## Expected result / what to measure
-Alpha per pixel along the dab's radius, for each (size, AA, offset). Derive: radius definition
-(diameter = size?), coverage model (area coverage vs distance threshold), AA ramp width per level.
-
-## Observations
-- 2026-11-11, automated-Wine: the harness can select tools, click on the canvas and export
-  PNGs (see wine-harness.md). Mouse clicks under Xvfb arrive as normal pointer input with no
-  pressure. Demo: the default pen sub tool, a 60-step scripted drag; the stroke appeared in the
-  exported PNG at the expected canvas position (canvas = screen − (821, 307) at 100 % zoom on a
-  256×512 canvas) with constant width. The full sweep above has **not** been run yet.
+  All AA None errors are pixels at or very near d = R.
+- Rounding instead of truncating drops the AA levels to 55–95 % exact (the earlier fit,
+  `b001_fit_centre.py`).
 
 ## Open questions
-- Does a click with zero motion place exactly one dab?
-- Does mouse input apply an implied pressure (Preferences "reduce pressure for mouse")?
-  If so, turn that preference off for all mouse-driven specs and record its state.
+- AA None tie rule. At exactly d = R CSP covers some neighbours but not others, depending on
+  direction. Examples: size 2 at a pixel centre lights the top, left and right neighbours but
+  not the bottom one. Size 1 at a pixel corner lights one pixel. B-002 also shows strokes at
+  sizes 16 and 63 covering pixels up to ~0.1 px beyond R. Needs a dedicated sub-pixel sweep
+  (sizes 2, 16, 63; offsets in 0.1 px steps).
+- AA Strong ±1 at size 25.3 (7 px).
