@@ -257,14 +257,51 @@ crates/
   stated GPU tolerance. Integer compositing makes the CSP-matching tests exact, and a single
   renderer for the alpha removes a whole class of mismatch bugs.
 
-## D-013 Undo/redo design — PROPOSAL
-- **Proposal:** undo is built on commands. Each executed command produces an *inverse delta*:
-  copy-on-write tile snapshots for pixel changes, and old-value records for property changes.
-  `history.undo` / `history.redo` are themselves commands in the journal, so replay
-  reproduces the exact history state. History depth is bounded by memory (configurable),
-  not by a fixed step count.
-- **Alternatives:** recompute by replaying from the last checkpoint (simple, but slow for
-  long sessions); pure inverse commands (hard to get right for brush strokes).
+## D-013 Undo/redo design — PROPOSAL (revised 2026-11-13 after spec H-001)
+- **Date:** proposed 2026-11-11; revised 2026-11-13 with the observed CSP behaviour in
+  `specs/behavior/history/H-001-undo-granularity.md`.
+- **Proposal:**
+  1. **Mechanism: immutable snapshots with shared tiles** (replaces the earlier "inverse delta"
+     idea). The document is immutable. Each undoable command produces a new document version
+     in which unchanged tiles and properties are shared with the previous version (`Arc`
+     copy-on-write, 256² tiles, D-012). History is a list of versions; undo and redo move a
+     pointer. A version costs only the tiles it changed. No command needs its own "undo half",
+     so undo is correct by construction, and the UI, autosave and export can read a stable
+     version without locks.
+  2. **What is an undo step (matches CSP, H-001):**
+     - *Undoable (document state):* strokes, layer create/delete/move, layer properties
+       (opacity, blend mode, name, locks, …), selection changes including deselect, and
+       transforms and other pixel edits.
+     - *Not undoable, but journaled (application/view state):* tool and brush settings, colours,
+       zoom/pan/rotate/flip of the view, which layer is selected, and **layer visibility**
+       (CSP doesn't record visibility in history).
+     - The registry (D-011) carries this as a per-command flag (`undoable`), next to `journal`.
+  3. **Grouping and merging (matches CSP, H-001):**
+     - A continuous gesture (a stroke, a slider drag, a transform session) commits as **one
+       command and one undo step**. Live previews in between are not commands.
+     - **Consecutive changes of the same kind merge into one step** (opacity drag then typed
+       opacity, lock then unlock). Undoing a merged step restores the state from before the
+       whole run.
+     - **Optional time merge:** a preference "undo merge interval", 0–2000 ms, default 0. When
+       it's above 0, consecutive actions within the interval merge into one step.
+     - **Merges are recorded explicitly in the journal**, so replay never depends on timing. A
+       merged command is written `@n+ …` (the `+` means "joins the previous undo step"), and
+       replay applies exactly that grouping.
+     - Commands whose result is empty (e.g. a stroke fully outside the selection) still create
+       a step, as in CSP.
+  4. **Linear history:** after an undo, a new undoable command discards the redo branch from
+     history. The journal still has everything, including `history.undo` / `history.redo` lines,
+     so replay reproduces the exact history state (and which entries are redoable).
+  5. **Limit:** a step count, configurable **1–200** like CSP's "Undo levels", default 200 until
+     CSP's factory default is confirmed. Plus a memory cap as a backstop for very large canvases
+     (oldest steps dropped first). The journal is never truncated by the history limit.
+- **Alternatives considered:** (a) inverse deltas per command (the 2026-11-11 proposal): the same
+  memory cost, but every command needs correct undo code, and bugs hide there. (b) Recompute by
+  replaying the journal from a checkpoint: simple, but slow for long sessions. (c) Implicit,
+  time-based merging decided again on replay: replay would depend on timing, so merges are
+  recorded instead.
+- **Reason:** matches CSP's observed undo behaviour, keeps replay exact (D-011/D-012), and
+  structural sharing gives correct undo with no per-command undo code.
 
 ## D-014 Native format `.brsh` — PROPOSAL
 - **Proposal:** a ZIP container (stored/deflate):
