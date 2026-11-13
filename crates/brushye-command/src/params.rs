@@ -536,6 +536,34 @@ mod tests {
     }
 
     #[test]
+    fn samples_accept_matrix_and_blob_and_print_blob() {
+        let m =
+            text_value("[10,20.5,0.5,0;12,21,0.75,4000]").unwrap_or_else(|e| unreachable!("{e}"));
+        let s = Samples::from_value(&m).unwrap_or_else(|e| unreachable!("{e}"));
+        assert_eq!(s.0.len(), 2);
+        assert_eq!(s.0[1].x, 12.0);
+        let blob = s.to_value();
+        assert!(matches!(blob, Value::Blob(_)));
+        assert_eq!(Samples::from_value(&blob), Ok(s));
+        assert!(
+            Samples::from_value(&text_value("[1,2,3]").unwrap_or_else(|e| unreachable!("{e}")))
+                .is_err()
+        );
+        assert!(
+            Samples::from_value(
+                &text_value("[1,2,0.5,1.5]").unwrap_or_else(|e| unreachable!("{e}"))
+            )
+            .is_err()
+        );
+        assert!(
+            Samples::from_value(
+                &text_value("[1,2,0.5,10;1,2,0.5,5]").unwrap_or_else(|e| unreachable!("{e}"))
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
     fn single_value_text_round_trip() {
         for s in [
             "L2",
@@ -550,5 +578,76 @@ mod tests {
             let v = text_value(s).unwrap_or_else(|e| unreachable!("{e}"));
             assert_eq!(value_text(&v), s);
         }
+    }
+}
+
+/// Stroke input samples (`docs/command-format.md` §7): accepted as a blob or a readable
+/// matrix, always printed as the canonical blob. Values are quantized either way.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Samples(pub Vec<brushye_core::input::Sample>);
+
+impl Samples {
+    fn from_matrix(rows: &[Vec<String>]) -> Result<Self, String> {
+        use brushye_core::input::{Sample, canonical};
+        let num = |s: &str| {
+            s.parse::<f64>()
+                .ok()
+                .filter(|v| v.is_finite())
+                .ok_or_else(|| format!("'{s}' is not a number"))
+        };
+        let mut out = Vec::with_capacity(rows.len());
+        for (i, r) in rows.iter().enumerate() {
+            if r.len() != 4 && r.len() != 7 {
+                return Err(format!(
+                    "sample row {i} has {} values; expected [x,y,p,t] or [x,y,p,t,tilt_x,tilt_y,twist]",
+                    r.len()
+                ));
+            }
+            let v: Vec<f64> = r.iter().map(|s| num(s)).collect::<Result<_, _>>()?;
+            if !(0.0..=f64::from(u32::MAX)).contains(&v[3]) || v[3].fract() != 0.0 {
+                return Err(format!("sample row {i}: t must be whole microseconds"));
+            }
+            out.push(Sample {
+                x: v[0],
+                y: v[1],
+                t_us: v[3] as u32,
+                pressure: Some(v[2] as f32),
+                tilt: (v.len() == 7).then(|| [v[4] as f32, v[5] as f32]),
+                twist: (v.len() == 7).then(|| v[6] as f32),
+                eraser: false,
+                barrel: [false; 2],
+            });
+        }
+        canonical(&out).map(Samples).map_err(|e| e.to_string())
+    }
+}
+
+impl Arg for Samples {
+    const KIND: &'static str = "stroke samples";
+    fn from_value(v: &Value) -> Result<Self, String> {
+        match v {
+            Value::Blob(b) => brushye_core::input::decode(b)
+                .map(Samples)
+                .map_err(|e| e.to_string()),
+            Value::Matrix(rows) => Samples::from_matrix(rows),
+            other => Err(format!(
+                "expected stroke samples (b64:… or [x,y,p,t;…]), found {}",
+                other.kind()
+            )),
+        }
+    }
+    fn to_value(&self) -> Value {
+        // Samples held here are always canonical (decoded/quantized), so encoding can't fail.
+        Value::Blob(brushye_core::input::encode(&self.0).unwrap_or_default())
+    }
+    fn to_json(&self) -> Json {
+        Json::String(format!(
+            "b64:{}",
+            B64.encode(brushye_core::input::encode(&self.0).unwrap_or_default())
+        ))
+    }
+    fn from_json(j: &Json) -> Result<Self, String> {
+        let s = j.as_str().ok_or("expected a \"b64:…\" string in JSON")?;
+        text_value(s).and_then(|v| Self::from_value(&v))
     }
 }

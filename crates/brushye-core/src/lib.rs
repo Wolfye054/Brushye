@@ -13,7 +13,9 @@ pub mod blend;
 pub mod document;
 pub mod hash;
 pub mod ids;
+pub mod input;
 pub mod render;
+pub mod rng;
 pub mod tile;
 
 pub use blend::BlendMode;

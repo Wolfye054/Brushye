@@ -88,3 +88,29 @@ Each line maps one-to-one to:
 The parser reports the line number, column and a message. Unknown commands, unknown keys,
 duplicate keys, positionals after a key, wrong value kinds, out-of-range values and malformed
 tokens are errors. Nothing is ignored silently.
+
+## 7. Stroke samples (`samples=` of the stroke command)
+
+A stroke records the raw input stream before any stabilization (D-011). Two forms:
+
+**Blob (canonical, written by Brushye):** `b64:` of
+```
+u8  format version (1)
+u8  field mask: bit0 pressure, bit1 tilt (x and y), bit2 twist, bit3 flags
+varint  sample count n
+then n samples, each field as a zigzag-LEB128 varint of the delta to the previous sample
+(the first sample's delta is from 0), in this order:
+  x, y        canvas position in 1/256 px (i32)
+  t           time since the stroke's first sample in µs (u32; first sample 0, never decreasing)
+  pressure    0..=65535 (u16)                  if bit0
+  tilt_x, tilt_y  1/100 degree, -9000..=9000   if bit1
+  twist       1/100 degree, 0..36000           if bit2
+  flags       u8: bit0 eraser end, bit1 barrel button 1, bit2 barrel button 2   if bit3
+```
+Zigzag: `(v << 1) ^ (v >> 63)` on i64. LEB128: 7 bits per byte, low bits first, high bit = more.
+Values are quantized when a stroke is created; the quantized values are what the brush engine
+uses, live and on replay, so both give identical pixels.
+
+**Readable (scripts and tests):** a matrix with one row per sample:
+`[x,y,p,t;…]` or `[x,y,p,t,tilt_x,tilt_y,twist;…]` — x, y in canvas px, p in 0..1, t in µs,
+tilt and twist in degrees. It is quantized exactly like the blob. Brushye always writes the blob.
