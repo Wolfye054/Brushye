@@ -349,14 +349,73 @@ crates/
   cached tiles), crash-safe, versioned like the command format, and the same container style as
   ORA, which keeps ORA export easy later.
 
-## D-015 Tablet input approach — PROPOSAL
-- **Proposal:** a `brushye-tablet` crate that produces a uniform `InputSample` stream.
-  First check whether current winit pen/pointer events deliver pressure, tilt and the eraser
-  end on all three OSes. Where they don't, add native backends: Windows Ink (`WM_POINTER`)
-  with Wintab as an option, macOS `NSEvent` tablet events, and Linux XInput2 (X11) plus
-  `zwp_tablet_v2` (Wayland). This is validated with a standalone spike app in **M1, before
-  the canvas work**.
-- **Reason:** CLAUDE.md names tablet input as the top technical risk.
+## D-015 Tablet input approach — ACCEPTED (2026-11-13)
+- **Date:** proposed 2026-11-11; accepted 2026-11-13 by the maintainer after reviewing the state
+  of winit/eframe and two earlier projects (photocraft, clipcraft) for their approach. **No code
+  from either project is used** (maintainer rule); Brushye's backends are written from the
+  platform documentation and protocol specs.
+- **Situation (checked 2026-11-13):** eframe 0.37 is built on winit 0.30, which drops pen
+  pressure, tilt and the eraser end. winit 0.31 (beta.4, 2026-10-24) adds tablet events
+  (`PointerSource::TabletTool`) on **Wayland** (tablet protocol v2) and **Windows** (pen
+  pointer input), but not on macOS or X11, and eframe doesn't use it yet.
+- **Decision:**
+  1. **`brushye-tablet` crate (D-010) with one uniform API.** Every backend produces the same
+     ordered stream of pen events: proximity in/out (with tool: pen, eraser, other), pose
+     (position, pressure, tilt, twist where available), tip down/up, and barrel buttons.
+     Nothing above this API sees platform details. Swapping a backend (e.g. for winit's own
+     events later) changes nothing in the app, brush engine or commands.
+  2. **Two delivery modes, explicit in the API:**
+     - **Full:** the OS no longer delivers the pen as a mouse (on Wayland, once the app binds
+       the tablet protocol, the compositor stops emulating a pointer). The app drives the canvas
+       from the pen events *and* feeds the pen's motion and taps into egui (eframe's per-frame
+       input hook), so the pen still works the UI.
+     - **Pressure-only:** the OS still delivers the pen as the mouse. The backend only adds
+       pressure, tilt, proximity and tool type to the matching pointer samples. The app injects
+       nothing, so taps are never doubled.
+  3. **Backends for the alpha:**
+
+     | Platform | Backend | Delivery |
+     |---|---|---|
+     | **Linux, Wayland** | Our own: the Wayland tablet protocol (`zwp_tablet_manager_v2`) bound on the **same Wayland connection** as the app's window (`wayland-client` + `wayland-protocols`). Protocol versions are negotiated as min(compositor, client); GNOME 46+ advertises v2, and binding the server's version blindly breaks tablet detection. | Full |
+     | Linux, X11 / Xwayland | Our own: XInput2 raw events on a second, pure-Rust X connection (`x11rb`), reading the stylus valuators by label (Abs Pressure, Abs Tilt X/Y). | Pressure-only |
+     | Windows | **Windows Ink** (pointer/pen messages) by default; **WinTab** as a preference (as in CSP 1.13.2). | Pressure-only |
+     | macOS | AppKit tablet events (pressure, tilt, rotation, pointing-device type) read from the app's own events. | Pressure-only |
+
+     **Native Wayland is an alpha target.** Xwayland is only a fallback for compositors without
+     the tablet protocol.
+  4. **Moving to winit 0.31:** once eframe adopts winit 0.31, the Wayland and Windows backends
+     are replaced by winit's own tablet events (removing our same-connection Wayland code).
+     macOS and X11 keep their own backends until winit covers them.
+  5. **What strokes need (beyond "pressure works").** The stroke command records the raw input
+     stream (D-011), so every backend must deliver: **every sample** (including coalesced
+     high-rate samples, not one per UI frame), **sub-pixel positions**, and **OS event
+     timestamps** (not frame times). Samples are recorded raw. The global pen pressure curve is
+     a journaled setting applied in the brush engine, before per-setting curves, matching CSP's
+     order (B-006).
+  6. **`unsafe` is isolated:** the workspace denies `unsafe` code; `brushye-tablet` is the only
+     crate allowed it, and only in its OS-interop modules (sharing the Wayland connection, Win32,
+     AppKit). Every `unsafe` block carries a `SAFETY:` comment. All mapping logic (normalising,
+     clamping, pen state tracking) is pure and tested on every platform.
+  7. **Testing:**
+     - X11: automated with the virtual stylus (D-003, `tools/observe/vpen.py`) on this machine.
+     - Wayland: the maintainer's real pen on GNOME. Automated Wayland testing (a headless
+       compositor with a virtual tablet, or a temporary test pen on the maintainer's seat with
+       explicit OK) is decided in M1.
+     - Windows and macOS: the maintainer's real pen.
+     - The M1 spike app logs the event stream and draws a pressure trace on each platform.
+- **Alternatives considered:**
+  (a) Xwayland whenever a pen is attached (photocraft's approach): no native Wayland, and it
+  depends on Xwayland being present. Kept only as a fallback.
+  (b) The `octotablet` crate (used by clipcraft): proves the same-connection approach on GNOME,
+  but it has had one release (0.1.0, 2024-03) and needed a local patch to detect tablets on
+  GNOME 46+. Not used.
+  (c) Dropping eframe for raw winit 0.31 plus our own egui glue now: native tablet input today,
+  but a beta dependency and glue code to maintain. Revisit only if eframe's adoption stalls.
+  (d) Reusing photocraft's tablet crate: ruled out by the maintainer (no photocraft code).
+- **Reason:** CLAUDE.md names tablet input the top technical risk. A uniform API with
+  per-platform backends lets each OS use its best mechanism today, keeps native Wayland on the
+  maintainer's own desktop, and lets winit 0.31 replace two backends later without touching
+  anything above the API.
 
 ## D-016 Proposed dependencies (each still needs approval when introduced)
 | Crate | Use | Why |
@@ -371,6 +430,10 @@ crates/
 | `rand_pcg` (or a hand-written PCG32) | seeded jitter | Portable and reproducible |
 | `thiserror` | error types in library crates | Removes boilerplate, no runtime cost |
 | `rmcp` | MCP server | Official Rust MCP SDK |
+| `wayland-client`, `wayland-protocols` | Wayland tablet backend (D-015) | Maintained (Smithay) pure-Rust Wayland client + generated protocol bindings |
+| `x11rb` | X11/Xwayland tablet backend (D-015) | Pure-Rust X11 client with XInput2; no C library needed |
+| `windows` | Windows Ink / WinTab backend (D-015) | Microsoft's official Win32 bindings |
+| `objc2`, `objc2-app-kit` | macOS tablet backend (D-015) | Maintained, type-safe AppKit bindings |
 | `insta` (dev) | golden tests for codec/migrations | Snapshot review workflow |
 
 ## D-017 Blend-mode implementation strategy — PROPOSAL

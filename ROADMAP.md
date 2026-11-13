@@ -12,14 +12,16 @@ Ordering follows CLAUDE.md's priorities: command layer → brush engine → .sut
 - **Exit:** maintainer approves or amends the proposals.
 
 ## M1 — Tablet input spike (top technical risk)
-- Standalone `brushye-tablet` crate + a tiny egui test app that logs `InputSample`s
-  (position, pressure, tilt, rotation, eraser end, timestamps) and draws a pressure trace.
-- Try winit pen events first, then native backends (Windows Ink/Wintab, macOS NSEvent,
-  Linux XInput2/Wayland tablet-v2).
-- The maintainer tests with a real pen on every OS available.
-- In parallel (needs maintainer): decide whether to set up the Xorg + libinput + uinput
-  virtual stylus (D-003). If it works, pressure specs can be automated.
-- **Exit:** pressure + tilt + eraser end confirmed on ≥ 2 OSes; a written risk report for the rest.
+- `brushye-tablet` crate with the uniform pen-event API and both delivery modes (D-015), plus a
+  small egui test app that logs the event stream and draws a pressure trace.
+- Backends: Wayland (own, same connection, version negotiation), X11/XInput2, Windows Ink
+  (+ WinTab option), macOS AppKit. Check: every sample, sub-pixel positions, OS timestamps.
+- Check whether eframe has adopted winit 0.31 by then; if so, use its tablet events for
+  Wayland and Windows instead.
+- X11 tested automatically with the virtual stylus (D-003). The maintainer tests Wayland
+  (GNOME), Windows and macOS with a real pen. Decide on automated Wayland testing.
+- **Exit:** pressure + tilt + eraser end confirmed on native Wayland and ≥ 1 other OS; a written
+  risk report for the rest.
 
 ## M2 — Document model + command layer core (headless)
 - `brushye-core` (model module): document, layer tree (raster + paper), tiles, ids.
