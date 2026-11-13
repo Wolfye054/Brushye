@@ -6,7 +6,7 @@ members = ["crates/*"]
 version = "0.0.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/OWNER/brushye"
+repository = "https://github.com/Wolfye054/brushye"
 rust-version = "1.85"
 
 [workspace.lints.rust]
