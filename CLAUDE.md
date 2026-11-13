@@ -114,13 +114,13 @@ command layer. Nothing changes state outside it.
 - `docs/reports/`: milestone reports.
 
 ## Current status
-Phase 1 (study & planning) is done, and all Phase 1 proposals (D-010 to D-017: crate
-layout, command format, determinism, undo/redo, .brsh format, tablet input, dependencies,
-blend-mode strategy) are ACCEPTED. M1 (tablet spike) is done on Linux; Windows/macOS
-backends are deferred (no test hardware). Pre-M3 blending observations are done (L-003..L-007).
-M2 (document model + command layer) is done locally. Next: M3 (CPU compositor). New architectural decisions still need maintainer
-approval first (see Working agreement). Never copy code from the maintainer's other
-projects (photocraft, clipcraft); design ideas only.
+Phase 1 (study & planning) is done, and all Phase 1 proposals (D-010 to D-017: crate layout,
+command format, determinism, undo/redo, .brsh format, tablet input, dependencies, blend-mode
+strategy) are ACCEPTED. M1 (tablet spike) is done on Linux; Windows/macOS backends are deferred
+(no test hardware). Pre-M3 blending observations are done (L-003..L-007). M2 (document model +
+command layer) is done locally. Next: M3 (CPU compositor). New architectural decisions still
+need maintainer approval first (see Working agreement). Never copy code from the maintainer's
+other projects (photocraft, clipcraft); design ideas only.
 
 ## Alpha goal
 Basic drawing with custom brushes:
