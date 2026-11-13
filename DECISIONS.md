@@ -257,10 +257,11 @@ crates/
   stated GPU tolerance. Integer compositing makes the CSP-matching tests exact, and a single
   renderer for the alpha removes a whole class of mismatch bugs.
 
-## D-013 Undo/redo design — PROPOSAL (revised 2026-11-13 after spec H-001)
+## D-013 Undo/redo design — ACCEPTED (2026-11-13)
 - **Date:** proposed 2026-11-11; revised 2026-11-13 with the observed CSP behaviour in
-  `specs/behavior/history/H-001-undo-granularity.md`.
-- **Proposal:**
+  `specs/behavior/history/H-001-undo-granularity.md`; accepted as written 2026-11-13 by the
+  maintainer.
+- **Decision:**
   1. **Mechanism: immutable snapshots with shared tiles** (replaces the earlier "inverse delta"
      idea). The document is immutable. Each undoable command produces a new document version
      in which unchanged tiles and properties are shared with the previous version (`Arc`
