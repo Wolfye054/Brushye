@@ -111,8 +111,8 @@ command layer. Nothing changes state outside it.
   The crates are created when application work starts; a placeholder crate stands in until then.
 
 ## Current status
-Phase 1 (study & planning) is done. D-010 (crate layout) and D-011 (command format) are
-ACCEPTED; the other DECISIONS.md proposals are still under review. Don't write application
+Phase 1 (study & planning) is done. D-010 (crate layout), D-011 (command format) and D-012
+(determinism) are ACCEPTED; the other DECISIONS.md proposals are still under review. Don't write application
 code that depends on a decision until it is marked ACCEPTED.
 
 ## Alpha goal

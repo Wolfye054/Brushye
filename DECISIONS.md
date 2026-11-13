@@ -207,39 +207,55 @@ crates/
   typical 2-second stroke at 200 Hz is roughly 3–5 KB of base64); migrations make old journals
   replayable forever; and the JSON form keeps MCP and scripting easy.
 
-## D-012 Determinism strategy (CPU reference vs GPU tolerance) — PROPOSAL
-- **Date:** 2026-11-11
-- **Proposal:**
+## D-012 Determinism strategy (CPU reference vs GPU tolerance) — ACCEPTED (2026-11-13)
+- **Date:** proposed 2026-11-11; accepted 2026-11-13 by the maintainer, with the change that
+  the alpha composites on the CPU only (point 4).
+- **Decision:**
   1. **Pixel storage:** layers are stored as 8-bit straight (non-premultiplied) RGBA in
      256×256 tiles. Compositing converts alpha to 15-bit fixed point (0..32768), the
-     precision CSP observably uses (L-002). This matches what CSP 1.13.2 exposes: an 8-bit "Color" canvas whose
-     compositing results are reproduced exactly by integer formulas (see
-     `specs/behavior/blending/layer-blend-modes-opaque.md`). Strokes accumulate in a
-     higher-precision stroke buffer (u16 or f32, decided by the brush specs) and are combined
-     into the layer once, using the ink combine mode.
-  2. **The CPU reference renderer (the `render` module of `brushye-core`, D-010) defines correct output.** Compositing and
-     blend modes use integer arithmetic only, so they're bit-identical on every platform.
-     Brush geometry uses `f32` with these rules: no `mul_add`/FMA, no platform `libm`
-     (use the pure-Rust `libm` crate), no SIMD paths whose results differ from scalar, a fixed
-     tile iteration order, and per-tile parallelism only where tiles are independent. Random
-     numbers come from a seeded, portable PRNG (e.g. PCG32) whose seed is stored in the command.
+     precision CSP observably uses (L-002). This matches what CSP 1.13.2 exposes: an 8-bit
+     "Color" canvas whose compositing results are reproduced exactly by integer formulas (L-001).
+     The alpha is **8-bit only**. A 16-bit document option may come post-alpha (soft,
+     low-density brushes can band at 8 bits, as they do in CSP).
+     Strokes accumulate in a stroke buffer and are combined into the layer once, using the ink
+     combine mode. The stroke buffer's precision (8-bit, u16 or f32) is **not decided here**: it
+     is set by the brush specs once CSP's within-stroke accumulation is measured (B-003/B-005
+     show per-dab density building up, which is where it matters).
+  2. **The CPU reference renderer (the `render` module of `brushye-core`, D-010) defines
+     correct output.** Compositing and blend modes use integer arithmetic only, so they're
+     bit-identical on every platform. Brush geometry uses `f32` with these rules: no
+     `mul_add`/FMA, no platform `libm` (use the pure-Rust `libm` crate), no SIMD paths whose
+     results differ from scalar, no fast-math, a fixed tile iteration order, and per-tile
+     parallelism only where tiles are independent. Random numbers come from a seeded, portable
+     PRNG (e.g. PCG32) whose seed is stored in the command (D-011).
   3. **Cross-platform test:** CI renders the same journals on Windows, macOS and Linux and
-     compares hashes of the CPU output. Any difference fails the build.
-  4. **GPU renderer tolerance:** the wgpu path is tested against the CPU reference on the
-     same journals. Proposed thresholds: compositing ≤ 1/255 per channel on ≥ 99.9 % of pixels
-     and never > 2/255; brush dabs ≤ 2/255 on ≥ 99 % and never > 4/255. Tolerances are
-     enforced in CI with a software adapter (lavapipe/WARP), plus a manual run on real GPUs
-     before release. Saving and export **always** use the CPU result, so files never depend
-     on the GPU.
-  5. **CSP-matching tests:** observed CSP outputs (exported PNGs) are stored under `specs/`
+     compares hashes of the CPU output. Any difference fails the build. This is the safety net
+     for the `f32` rules in point 2.
+  4. **Alpha rendering: CPU composites, GPU only displays.** The CPU composites the tiles a
+     command dirtied (incremental, per 256² tile). The GPU (wgpu, in `brushye-app`) uploads
+     composited tiles as textures and draws the canvas with pan, zoom and rotate. There is one
+     renderer, so the screen shows exactly what gets saved, and replay determinism needs no
+     GPU tolerance. Display test: at 100 % zoom, unrotated, the displayed pixels equal the CPU
+     tiles exactly (read back from the GPU in a software-adapter CI test).
+  5. **GPU compositing (later, only if profiling demands it** — e.g. very large canvases or
+     many layers): it is then tested against the CPU reference on the same journals.
+     Tolerances, to be confirmed when it's built: compositing ≤ 1/255 per channel on ≥ 99.9 %
+     of pixels and never > 2/255; brush dabs ≤ 2/255 on ≥ 99 % and never > 4/255. Enforced in
+     CI with a software adapter (lavapipe/WARP), plus a manual run on real GPUs before release.
+     Saving and export **always** use the CPU result, so files never depend on the GPU.
+  6. **CSP-matching tests:** observed CSP outputs (exported PNGs) are stored under `specs/`
      and the tests use them directly (e.g. the 256×256 per-mode tables).
-- **Alternatives:** (a) GPU as the source of truth, with no CPU renderer: fast, but output
-  differs across vendors and drivers, so replay can't be verified. (b) f32 linear-light
-  compositing everywhere: doesn't match CSP, which observably blends 8-bit sRGB values with
-  integer rounding. (c) 16-bit storage: possible later as a document option. Kept out of the
-  alpha because CSP 1.13.2 has no such canvas mode to match.
-- **Reason:** CLAUDE.md requires replay to reproduce the document, with a CPU reference
-  and a stated GPU tolerance. Integer compositing makes the CSP-matching tests exact.
+- **Alternatives considered:** (a) GPU as the source of truth, with no CPU renderer: fast, but
+  output differs across vendors and drivers, so replay can't be verified. (b) GPU compositing
+  from the start, within tolerance (the 2026-11-11 proposal): two renderers to keep in step
+  before we know the CPU path is too slow. (c) f32 linear-light compositing everywhere: doesn't
+  match CSP, which observably blends 8-bit sRGB values with integer rounding. (d) Fixed-point
+  brush geometry: safest for determinism but slower to write; f32 with strict rules and the CI
+  hash check is enough. (e) 16-bit storage from the start: CSP 1.13.2 has no such canvas mode
+  to match.
+- **Reason:** CLAUDE.md requires replay to reproduce the document, with a CPU reference and a
+  stated GPU tolerance. Integer compositing makes the CSP-matching tests exact, and a single
+  renderer for the alpha removes a whole class of mismatch bugs.
 
 ## D-013 Undo/redo design — PROPOSAL
 - **Proposal:** undo is built on commands. Each executed command produces an *inverse delta*:

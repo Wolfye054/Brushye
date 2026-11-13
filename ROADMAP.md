@@ -50,9 +50,11 @@ Ordering follows CLAUDE.md's priorities: command layer → brush engine → .sut
 - `.brsh` save/load (D-014) with round-trip tests. User brush definitions saved in Brushye format.
 - **Exit:** save → load → replay gives the same hash; undo/redo fuzz tests pass.
 
-## M6 — App shell + GPU canvas
-- eframe window, wgpu canvas renderer (tiles as textures), pan/zoom/rotate.
-- GPU vs CPU tolerance tests (D-012) on a software adapter in CI.
+## M6 — App shell + GPU canvas display
+- eframe window, wgpu canvas display: CPU-composited tiles uploaded as textures, pan/zoom/rotate
+  (D-012: the CPU composites, the GPU only displays).
+- Display test on a software adapter in CI: at 100 % zoom the shown pixels equal the CPU tiles.
+- GPU compositing (with the D-012 tolerance tests) only later, if profiling shows the need.
 - Tablet input wired to `stroke` commands. Live stroke preview.
 - Layer palette, colour wheel/sliders, tool property palette, brush size palette.
 - **Exit:** the maintainer draws comfortably with pressure on their main OS.
