@@ -1,0 +1,3 @@
+[alias]
+# M1 tablet spike: `cargo pen-log` (DECISIONS D-015)
+pen-log = "run -p brushye-tablet --example pen_log"
