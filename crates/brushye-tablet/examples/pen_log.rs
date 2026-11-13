@@ -147,16 +147,25 @@ impl eframe::App for App {
             let painter = ui.painter();
             let all = self.strokes.iter().chain(self.current.iter());
             for s in all {
+                // Each segment is drawn with a round cap at its end (a filled circle), so
+                // thick segments meeting at an angle leave no wedge-shaped gaps at bends.
+                // (A trace of the input, not Brushye's brush engine.)
+                let width = |p: &PenPose| 1.0 + 24.0 * p.pressure.unwrap_or(1.0);
+                if let Some(first) = s.first() {
+                    painter.circle_filled(
+                        egui::pos2(first.x as f32, first.y as f32),
+                        width(first) / 2.0,
+                        egui::Color32::WHITE,
+                    );
+                }
                 for w in s.windows(2) {
                     let (a, b) = (w[0], w[1]);
-                    let width = 1.0 + 24.0 * b.pressure.unwrap_or(1.0);
+                    let pb = egui::pos2(b.x as f32, b.y as f32);
                     painter.line_segment(
-                        [
-                            egui::pos2(a.x as f32, a.y as f32),
-                            egui::pos2(b.x as f32, b.y as f32),
-                        ],
-                        egui::Stroke::new(width, egui::Color32::WHITE),
+                        [egui::pos2(a.x as f32, a.y as f32), pb],
+                        egui::Stroke::new(width(&b), egui::Color32::WHITE),
                     );
+                    painter.circle_filled(pb, width(&b) / 2.0, egui::Color32::WHITE);
                 }
             }
         });
