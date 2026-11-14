@@ -77,8 +77,46 @@
     still off).
   - So thin dabs in a stroke differ from a lone dab in some way not yet seen.
 
+## Run 3 (2026-11-14): thin-tip strokes
+- **Setup:** new custom sub tool "B014c": size 41, thickness 30, Vertical, hardness 5,
+  density 100, stabilization 0.
+  - `brush_run2.py softrow` (straight stroke plus a lone dab, 800×600) at angle 0/30 × AA
+    None/Middle × gap Fixed 300/Normal: `data/B014_row_a{0,30}_aa{0,2}_{fixed300,normal}.png`.
+  - Direction of line with `dirs2` (800×800): `data/B014_dirs_aa2_{fixed300,normal}.png`.
+  - Registry: `~/brushye-samples/b014_run3/registry.md`.
+- **Fixed 300 = 123 px = 3 × size.** Every dab inside a stroke equals the lone dab: same pixels,
+  ink within 4 levels, same centroid offset. Thin dabs don't change in strokes.
+- **AA None strokes match Brushye** (`crates/brushye-core/tests/b014_thin_strokes.rs`):
+  0–1 % of pixels off, ink within 1 %, Normal gap included. So thin-tip spacing and
+  accumulation are right.
+- **AA Middle:**
+  - Brushye's interim dab is 27–29 % too heavy when isolated. In Normal-gap strokes the ink
+    comes out within 1.3 % only because of that excess.
+  - A stroke's top edge row is built from each dab's top fringe rows. CSP's lone dab has strong
+    fringe rows (51 / 154 / 239), and CSP's stroke edge reads 167.
+  - Any dab model that gets those fringe rows wrong is wrong in strokes: the 12-gon gives 28
+    there, and its strokes come out 5–7 % light.
+- **Direction of line:**
+  - The first dab is at the press point, long axis along the stroke, in all 8 directions; B-010's
+    "first dab ≈ 10 px late" didn't recur.
+  - The dab's orientation at the press point may come from vpen's ±0.1 px touch-down nudge.
+    Check on native Windows.
+
+## What the dab rule must do (from the sweep, dab at (70.5, 70.5), AA Middle)
+- **Horizontal edge ramps** widen away from the centre row as a ramp along the true ellipse
+  normal predicts: 3.5, 3.9, 5.3, 8.6 px in rows 0–3 from the centre, against 3.5, 4.0, 5.3,
+  7.4 for w = 3.5.
+- **The top and bottom fringe rows** are straight-sided triangles across x, like a polygon
+  edge, not an ellipse curve.
+- **The long-axis tips are asymmetric** (left 36, 109, 255; right 182, 109, 36).
+- **Models tried:** a distance ramp on the ellipse, a distance ramp on the 12-gon, and a
+  separable min(row ramp, column ramp) on the 12-gon. Their total errors are 125–180 over 8
+  dabs, and the worst pixel is ≈ 80–105 levels in every case. None is exact.
+
 ## Open
-- **Run 3:** thin-tip strokes with isolated dabs (gap Fixed 300) and with Normal gap, angle 0 and
+- The exact dab rule. It has to reproduce the fringe rows, since strokes depend on them. Then
+  replace the interim model and tighten the pins.
+- (Done) **Run 3:** thin-tip strokes with isolated dabs (gap Fixed 300) and with Normal gap, angle 0 and
   30, AA None and Middle, plus Direction of line. That shows each dab inside a stroke next to
   a lone dab.
 - Then: the per-row AA rule on the 12-gon, from the sweep data.
