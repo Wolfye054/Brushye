@@ -626,6 +626,9 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
         app.ui.layer_tab = 1;
     }
     item(ui, "Auto action", "", false);
+    if check(ui, "Journal (Brushye)", "", app.ui.journal.open, true) {
+        app.ui.journal.open = !app.ui.journal.open;
+    }
     if check(
         ui,
         "Information",

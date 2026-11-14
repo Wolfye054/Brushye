@@ -259,6 +259,7 @@ pub fn dialogs(app: &mut App, ctx: &egui::Context) {
     sut_report(app, ctx);
     preferences(app, ctx);
     about(app, ctx);
+    super::journal::window(app, ctx);
     import_brush(app, ctx);
     let Some(mut d) = app.dialog.take() else {
         return;

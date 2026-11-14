@@ -6,6 +6,7 @@
 pub mod chrome;
 pub mod colour;
 pub mod dialogs;
+pub mod journal;
 pub mod left;
 pub mod menus;
 pub mod right;
@@ -174,6 +175,8 @@ pub struct UiState {
     pub renaming: Option<(u32, String)>,
     pub about_open: bool,
     pub prefs_open: bool,
+    /// Window > Journal (Brushye), M9.
+    pub journal: journal::JournalWindow,
 }
 
 impl UiState {
@@ -219,6 +222,7 @@ impl UiState {
             renaming: None,
             about_open: false,
             prefs_open: false,
+            journal: Default::default(),
         }
     }
 
