@@ -246,8 +246,56 @@ pub fn chips(ui: &mut Ui, c: &Colors, st: &mut ColourState, at: Pos2, size: f32)
     }
 }
 
+const TAB_NAMES: [&str; 7] = [
+    "Color Wheel",
+    "Color Set",
+    "Color Slider",
+    "Color Mixing",
+    "Color History",
+    "Approximate Color",
+    "Intermediate Color",
+];
+
+/// The colour group's ≡ menu (U-012): the active tab's own items, then hide/show palettes.
+fn group_menu(ui: &mut Ui, ust: &mut super::UiState) {
+    if ust.colour.tab == 0 {
+        if ui
+            .add(egui::Button::selectable(!ust.prefs.hls, "HSV color space"))
+            .clicked()
+        {
+            ust.prefs.hls = false;
+            ust.sets_dirty = true;
+            ui.close();
+        }
+        if ui
+            .add(egui::Button::selectable(ust.prefs.hls, "HLS color space"))
+            .clicked()
+        {
+            ust.prefs.hls = true;
+            ust.sets_dirty = true;
+            ui.close();
+        }
+        ui.separator();
+    }
+    for (i, name) in TAB_NAMES.iter().enumerate() {
+        let available = !matches!(i, 3 | 6);
+        if i == ust.colour.tab {
+            if ui.button(format!("Hide {name} palette")).clicked() {
+                ust.hidden.insert("colour");
+                ui.close();
+            }
+        } else if ui
+            .add_enabled(available, egui::Button::new(format!("Show {name} palette")))
+            .clicked()
+        {
+            ust.colour.tab = i;
+            ui.close();
+        }
+    }
+}
+
 /// The colour palette group (left dock, bottom).
-pub fn palette(ui: &mut Ui, c: &Colors, st: &mut ColourState, r: Rect) {
+pub fn palette(ui: &mut Ui, c: &Colors, ust: &mut super::UiState, r: Rect) {
     let title = Rect::from_min_size(r.min, vec2(r.width(), 17.0));
     let tabs = [
         Tab {
@@ -286,11 +334,14 @@ pub fn palette(ui: &mut Ui, c: &Colors, st: &mut ColourState, r: Rect) {
             enabled: false,
         },
     ];
-    widgets::title_bar(ui, c, title, &tabs[..6], &mut st.tab, true);
+    let menu = widgets::title_bar(ui, c, title, &tabs[..6], &mut ust.colour.tab, true);
+    egui::Popup::menu(&menu).show(|ui| group_menu(ui, ust));
+    let hls = ust.prefs.hls;
+    let st = &mut ust.colour;
     let body = Rect::from_min_max(pos2(r.left(), title.bottom()), r.max);
     widgets::fill(ui, body, c.bar);
     widgets::area(ui, body, |ui| match st.tab {
-        0 => wheel(ui, c, st, body),
+        0 => wheel(ui, c, st, body, hls),
         1 => set(ui, c, st, body),
         2 => sliders(ui, c, st, body),
         4 => history(ui, c, st, body),
@@ -301,7 +352,7 @@ pub fn palette(ui: &mut Ui, c: &Colors, st: &mut ColourState, r: Rect) {
     });
 }
 
-fn wheel(ui: &mut Ui, c: &Colors, st: &mut ColourState, body: Rect) {
+fn wheel(ui: &mut Ui, c: &Colors, st: &mut ColourState, body: Rect, hls: bool) {
     let d = (body.width() - 18.0).min(body.height() - 18.0).min(190.0);
     let center = pos2(body.center().x, body.top() + 6.0 + d / 2.0);
     let (r_out, r_in) = (d / 2.0, d / 2.0 - 16.0);
@@ -322,28 +373,45 @@ fn wheel(ui: &mut Ui, c: &Colors, st: &mut ColourState, body: Rect) {
         }
     }
     ui.painter().add(Shape::mesh(mesh));
-    // Saturation (left → right) / value (top → bottom) square, bilinear in RGB (exact for HSV
-    // at a fixed hue).
+    let hue_rgb = hsv_to_rgb([st.hsv[0], 1.0, 1.0]);
     let side = (r_in * 2.0 / 2f32.sqrt() - 4.0).floor();
     let sq = Rect::from_center_size(center, vec2(side, side));
-    let mut mesh = Mesh::default();
-    let k = 16;
-    for y in 0..=k {
-        for x in 0..=k {
-            let (s, v) = (x as f32 / k as f32, 1.0 - y as f32 / k as f32);
-            mesh.colored_vertex(
-                sq.min + vec2(s * side, (1.0 - v) * side),
-                c32(hsv_to_rgb([st.hsv[0], s, v])),
-            );
-            if x > 0 && y > 0 {
-                let i = (y * (k + 1) + x) as u32;
-                let w = (k + 1) as u32;
-                mesh.add_triangle(i - w - 1, i - w, i);
-                mesh.add_triangle(i - w - 1, i, i - 1);
+    // HLS: a triangle with the pure hue at the right, white top-left, black bottom-left (U-013).
+    let tri_r = r_in - 4.0;
+    let tri = [
+        center + vec2(tri_r, 0.0),
+        center + vec2(-tri_r * 0.5, -tri_r * 0.866),
+        center + vec2(-tri_r * 0.5, tri_r * 0.866),
+    ];
+    if hls {
+        let mut mesh = Mesh::default();
+        mesh.colored_vertex(tri[0], c32(hue_rgb));
+        mesh.colored_vertex(tri[1], Color32::WHITE);
+        mesh.colored_vertex(tri[2], Color32::BLACK);
+        mesh.add_triangle(0, 1, 2);
+        ui.painter().add(Shape::mesh(mesh));
+    } else {
+        // Saturation (left → right) / value (top → bottom), bilinear in RGB (exact for HSV at a
+        // fixed hue).
+        let mut mesh = Mesh::default();
+        let k = 16;
+        for y in 0..=k {
+            for x in 0..=k {
+                let (s, v) = (x as f32 / k as f32, 1.0 - y as f32 / k as f32);
+                mesh.colored_vertex(
+                    sq.min + vec2(s * side, (1.0 - v) * side),
+                    c32(hsv_to_rgb([st.hsv[0], s, v])),
+                );
+                if x > 0 && y > 0 {
+                    let i = (y * (k + 1) + x) as u32;
+                    let w = (k + 1) as u32;
+                    mesh.add_triangle(i - w - 1, i - w, i);
+                    mesh.add_triangle(i - w - 1, i, i - 1);
+                }
             }
         }
+        ui.painter().add(Shape::mesh(mesh));
     }
-    ui.painter().add(Shape::mesh(mesh));
     // Markers.
     let a = hue_angle(st.hsv[0]);
     let hm = center + vec2(a.cos(), a.sin()) * (r_out + r_in) / 2.0;
@@ -353,13 +421,28 @@ fn wheel(ui: &mut Ui, c: &Colors, st: &mut ColourState, body: Rect) {
         Stroke::new(2.0, Color32::WHITE),
         egui::StrokeKind::Middle,
     );
-    let sm = sq.min + vec2(st.hsv[1] * side, (1.0 - st.hsv[2]) * side);
+    let cur = hsv_to_rgb(st.hsv).map(|v| f32::from(v) / 255.0);
+    let (mx, mn) = (
+        cur[0].max(cur[1]).max(cur[2]),
+        cur[0].min(cur[1]).min(cur[2]),
+    );
+    let sm = if hls {
+        // Barycentric weights: hue = max − min, white = min, black = 1 − max.
+        let (wh, ww, wb) = (mx - mn, mn, 1.0 - mx);
+        pos2(
+            tri[0].x * wh + tri[1].x * ww + tri[2].x * wb,
+            tri[0].y * wh + tri[1].y * ww + tri[2].y * wb,
+        )
+    } else {
+        sq.min + vec2(st.hsv[1] * side, (1.0 - st.hsv[2]) * side)
+    };
+    let light = (mx + mn) / 2.0;
     ui.painter().circle_stroke(
         sm,
         4.0,
         Stroke::new(
             1.0,
-            if st.hsv[2] > 0.5 {
+            if light > 0.5 {
                 Color32::BLACK
             } else {
                 Color32::WHITE
@@ -370,10 +453,17 @@ fn wheel(ui: &mut Ui, c: &Colors, st: &mut ColourState, body: Rect) {
     let wr = Rect::from_center_size(center, vec2(d, d));
     let resp = ui.interact(wr, ui.scope_id().with("wheel"), Sense::click_and_drag());
     let drag_id = ui.scope_id().with("wheel-part");
+    let in_inner = |q: Pos2| {
+        if hls {
+            (q - center).length() < tri_r
+        } else {
+            sq.contains(q)
+        }
+    };
     if (resp.drag_started() || resp.clicked())
         && let Some(q) = resp.interact_pointer_pos()
     {
-        let part = if sq.contains(q) {
+        let part = if in_inner(q) {
             1u8
         } else if (q - center).length() >= r_in - 2.0 {
             0
@@ -393,11 +483,30 @@ fn wheel(ui: &mut Ui, c: &Colors, st: &mut ColourState, body: Rect) {
             let v = q - center;
             let ang = v.y.atan2(v.x).to_degrees();
             hsv[0] = (ang - 180.0).rem_euclid(360.0);
+            st.set_hsv(hsv);
+        } else if part == 1 && hls {
+            // Barycentric coordinates of q, clamped into the triangle.
+            let (p0, p1, p2) = (tri[0], tri[1], tri[2]);
+            let den = (p1.y - p2.y) * (p0.x - p2.x) + (p2.x - p1.x) * (p0.y - p2.y);
+            let wh = ((p1.y - p2.y) * (q.x - p2.x) + (p2.x - p1.x) * (q.y - p2.y)) / den;
+            let ww = ((p2.y - p0.y) * (q.x - p2.x) + (p0.x - p2.x) * (q.y - p2.y)) / den;
+            let (wh, ww) = (wh.clamp(0.0, 1.0), ww.clamp(0.0, 1.0));
+            let (wh, ww) = if wh + ww > 1.0 {
+                (wh / (wh + ww), ww / (wh + ww))
+            } else {
+                (wh, ww)
+            };
+            let rgb = hue_rgb.map(|h| {
+                ((f32::from(h) / 255.0 * wh + ww) * 255.0)
+                    .round()
+                    .clamp(0.0, 255.0) as u8
+            });
+            let keep = st.hsv[0];
+            st.set(rgb);
+            st.hsv[0] = keep;
         } else if part == 1 {
             hsv[1] = ((q.x - sq.left()) / side).clamp(0.0, 1.0);
             hsv[2] = 1.0 - ((q.y - sq.top()) / side).clamp(0.0, 1.0);
-        }
-        if part != 2 {
             st.set_hsv(hsv);
         }
     }
@@ -409,15 +518,30 @@ fn wheel(ui: &mut Ui, c: &Colors, st: &mut ColourState, body: Rect) {
         pos2(body.left() + 6.0, body.bottom() - 46.0),
         18.0,
     );
-    ui.painter().text(
-        pos2(body.right() - 8.0, body.bottom() - 8.0),
-        egui::Align2::RIGHT_CENTER,
+    let readout = if hls {
+        let s_hls = if (mx - mn).abs() < 1e-6 {
+            0.0
+        } else {
+            (mx - mn) / (1.0 - (2.0 * light - 1.0).abs())
+        };
+        format!(
+            "H {:.0}  L {:.0}  S {:.0}",
+            st.hsv[0],
+            light * 100.0,
+            s_hls * 100.0
+        )
+    } else {
         format!(
             "H {:.0}  S {:.0}  V {:.0}",
             st.hsv[0],
             st.hsv[1] * 100.0,
             st.hsv[2] * 100.0
-        ),
+        )
+    };
+    ui.painter().text(
+        pos2(body.right() - 8.0, body.bottom() - 8.0),
+        egui::Align2::RIGHT_CENTER,
+        readout,
         egui::FontId::proportional(10.0),
         c.text,
     );
@@ -593,6 +717,14 @@ fn history(ui: &mut Ui, c: &Colors, st: &mut ColourState, body: Rect) {
             vec2(cell, cell),
         );
         ui.painter().rect_filled(r, 0.0, c32(*col));
+        if st.drawing() == Some(*col) {
+            ui.painter().rect_stroke(
+                r,
+                0.0,
+                Stroke::new(1.0, Color32::from_rgb(230, 50, 50)),
+                egui::StrokeKind::Inside,
+            );
+        }
         if ui
             .interact(r, ui.scope_id().with(("hist", i)), Sense::click())
             .clicked()

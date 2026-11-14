@@ -36,6 +36,8 @@ pub struct Settings {
     pub recent: Vec<String>,
     /// Sub tools per brush tool (see `ui::tools::to_json`).
     pub subtools: serde_json::Map<String, Json>,
+    /// Palette display preferences and brush size presets (see `ui::UiState::ui_json`).
+    pub ui: serde_json::Map<String, Json>,
 }
 
 impl Settings {
@@ -71,6 +73,7 @@ impl Settings {
                 })
                 .unwrap_or_default(),
             subtools: j["subtools"].as_object().cloned().unwrap_or_default(),
+            ui: j["ui"].as_object().cloned().unwrap_or_default(),
         }
     }
 
@@ -82,6 +85,7 @@ impl Settings {
             "interface": self.interface,
             "recent": self.recent,
             "subtools": self.subtools,
+            "ui": self.ui,
         });
         let text = serde_json::to_string_pretty(&j).map_err(|e| e.to_string())?;
         brushye_format::brsh::write_atomic(&Self::path(), text.as_bytes())

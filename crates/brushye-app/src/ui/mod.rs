@@ -9,6 +9,7 @@ pub mod dialogs;
 pub mod left;
 pub mod menus;
 pub mod right;
+pub mod rows;
 pub mod theme;
 pub mod tools;
 pub mod widgets;
@@ -48,8 +49,101 @@ impl Default for Visible {
     }
 }
 
+/// Palette display preferences from the palettes' ≡ menus (U-011, U-012), saved per user.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Prefs {
+    pub subtool_text: bool,
+    pub show_group_names: bool,
+    pub subtool_bar: bool,
+    pub drag_needs_ctrl: bool,
+    pub show_category: bool,
+    pub show_preview: bool,
+    pub tool_property_bar: bool,
+    pub size_slider: bool,
+    pub navigator_bar: bool,
+    pub layer_property_bar: bool,
+    pub layer_bar: bool,
+    pub hls: bool,
+}
+
+impl Default for Prefs {
+    /// CSP's defaults (U-011, U-012).
+    fn default() -> Self {
+        Self {
+            subtool_text: false,
+            show_group_names: true,
+            subtool_bar: true,
+            drag_needs_ctrl: false,
+            show_category: false,
+            show_preview: true,
+            tool_property_bar: true,
+            size_slider: false,
+            navigator_bar: true,
+            layer_property_bar: true,
+            layer_bar: true,
+            hls: false,
+        }
+    }
+}
+
+impl Prefs {
+    const KEYS: [&'static str; 12] = [
+        "subtool_text",
+        "show_group_names",
+        "subtool_bar",
+        "drag_needs_ctrl",
+        "show_category",
+        "show_preview",
+        "tool_property_bar",
+        "size_slider",
+        "navigator_bar",
+        "layer_property_bar",
+        "layer_bar",
+        "hls",
+    ];
+    fn fields(&mut self) -> [&mut bool; 12] {
+        [
+            &mut self.subtool_text,
+            &mut self.show_group_names,
+            &mut self.subtool_bar,
+            &mut self.drag_needs_ctrl,
+            &mut self.show_category,
+            &mut self.show_preview,
+            &mut self.tool_property_bar,
+            &mut self.size_slider,
+            &mut self.navigator_bar,
+            &mut self.layer_property_bar,
+            &mut self.layer_bar,
+            &mut self.hls,
+        ]
+    }
+    pub fn to_json(mut self) -> serde_json::Value {
+        let mut m = serde_json::Map::new();
+        for (k, v) in Self::KEYS.iter().zip(self.fields()) {
+            m.insert((*k).into(), serde_json::Value::Bool(*v));
+        }
+        serde_json::Value::Object(m)
+    }
+    pub fn from_json(j: &serde_json::Value) -> Self {
+        let mut p = Self::default();
+        for (k, v) in Self::KEYS.iter().zip(p.fields()) {
+            if let Some(b) = j.get(*k).and_then(serde_json::Value::as_bool) {
+                *v = b;
+            }
+        }
+        p
+    }
+}
+
 /// UI state that isn't part of the document.
 pub struct UiState {
+    pub prefs: Prefs,
+    /// Palettes hidden from their ≡ menu ("sub_tool", "tool_property", …).
+    pub hidden: std::collections::HashSet<&'static str>,
+    pub brush_sizes: Vec<f64>,
+    pub detail_category: usize,
+    pub detail_hover: Option<rows::Row>,
+    pub subtool_dialog: Option<left::SubToolDialog>,
     pub interface: Interface,
     pub applied_interface: Option<Interface>,
     pub tool: ToolId,
@@ -58,7 +152,9 @@ pub struct UiState {
     pub colour: colour::ColourState,
     pub previews: HashMap<String, TextureHandle>,
     pub detail_open: bool,
-    pub dynamics_popup: Option<left::DynTarget>,
+    pub dynamics_popup: Option<rows::DynRow>,
+    /// Where the dynamics button was clicked; the pop-up opens next to it (U-010).
+    pub dynamics_anchor: egui::Pos2,
     pub pending_subtool_op: Option<left::SubToolOp>,
     pub import_brush: Option<String>,
     pub eyedropper_layer: bool,
@@ -85,7 +181,24 @@ impl UiState {
                 sets.insert(t.id, saved.unwrap_or(d));
             }
         }
+        let ui = serde_json::Value::Object(settings.ui.clone());
+        let brush_sizes = ui["brush_sizes"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(serde_json::Value::as_f64)
+                    .filter(|v| *v > 0.0)
+                    .collect::<Vec<_>>()
+            })
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| tools::BRUSH_SIZES.to_vec());
         Self {
+            prefs: Prefs::from_json(&ui["prefs"]),
+            hidden: Default::default(),
+            brush_sizes,
+            detail_category: 0,
+            detail_hover: None,
+            subtool_dialog: None,
             interface: Interface::from_name(&settings.interface),
             applied_interface: None,
             tool: ToolId::Pen,
@@ -95,6 +208,7 @@ impl UiState {
             previews: HashMap::new(),
             detail_open: false,
             dynamics_popup: None,
+            dynamics_anchor: egui::Pos2::ZERO,
             pending_subtool_op: None,
             import_brush: None,
             eyedropper_layer: false,
@@ -125,9 +239,18 @@ impl UiState {
             .map(|s| &s.preset)
     }
 
+    /// The UI preferences saved with the user settings.
+    pub fn ui_json(&self) -> serde_json::Map<String, serde_json::Value> {
+        let mut m = serde_json::Map::new();
+        m.insert("prefs".into(), self.prefs.to_json());
+        m.insert("brush_sizes".into(), serde_json::json!(self.brush_sizes));
+        m
+    }
+
     /// Workspace > Reset to Default: show everything in its default place.
     pub fn reset_layout(&mut self) {
         self.visible = Visible::default();
+        self.hidden.clear();
         self.nav_tab = 0;
         self.layer_prop_tab = 0;
         self.layer_tab = 0;
@@ -218,33 +341,70 @@ pub fn frame(app: &mut App, ui: &mut egui::Ui) {
     if let Some(r) = left_r {
         let header = Rect::from_min_size(r.min, vec2(r.width(), m::DOCK_HEADER));
         widgets::fill(ui, header, c.header);
+        // Visible palettes in CSP's order; the colour group keeps its height and Brush size takes
+        // what's left (a hidden palette's space goes to the others).
+        let groups: Vec<(&str, f32)> = [
+            ("sub_tool", m::SUB_TOOL_H),
+            ("tool_property", m::TOOL_PROPERTY_H),
+            ("brush_size", m::BRUSH_SIZE_H),
+        ]
+        .into_iter()
+        .filter(|(k, _)| !app.ui.hidden.contains(k))
+        .collect();
+        let colour_shown = !app.ui.hidden.contains("colour");
+        let fixed: Vec<f32> = groups
+            .iter()
+            .take(groups.len().saturating_sub(1))
+            .map(|g| g.1)
+            .collect();
+        let bottom = if colour_shown {
+            (r.bottom() - m::COLOUR_H).max(header.bottom() + 120.0)
+        } else {
+            r.bottom()
+        };
         let parts = stack(
             header.bottom(),
-            r.bottom(),
-            &[m::SUB_TOOL_H, m::TOOL_PROPERTY_H, m::BRUSH_SIZE_H],
+            bottom - if colour_shown { 3.0 } else { 0.0 },
+            &fixed,
             3.0,
         );
-        // The colour group keeps its height; Brush size gives way when the window is short.
-        let colour_top = (r.bottom() - m::COLOUR_H).max(parts[2].0 + 60.0);
         let rect = |a: f32, b: f32| Rect::from_min_max(pos2(r.left(), a), pos2(r.right(), b));
-        left::sub_tool(ui, c, &mut app.ui, rect(parts[0].0, parts[0].1));
-        left::tool_property(ui, c, &mut app.ui, rect(parts[1].0, parts[1].1));
-        left::brush_size(ui, c, &mut app.ui, rect(parts[2].0, colour_top - 3.0));
-        colour::palette(ui, c, &mut app.ui.colour, rect(colour_top, r.bottom()));
+        for ((key, _), (a, b)) in groups.iter().zip(parts) {
+            match *key {
+                "sub_tool" => left::sub_tool(ui, c, &mut app.ui, rect(a, b)),
+                "tool_property" => left::tool_property(ui, c, &mut app.ui, rect(a, b)),
+                _ => left::brush_size(ui, c, &mut app.ui, rect(a, b)),
+            }
+        }
+        if colour_shown {
+            colour::palette(ui, c, &mut app.ui, rect(bottom, r.bottom()));
+        }
     }
     if let Some(r) = right_r {
         let header = Rect::from_min_size(r.min, vec2(r.width(), m::DOCK_HEADER));
         widgets::fill(ui, header, c.header);
-        let parts = stack(
-            header.bottom(),
-            r.bottom(),
-            &[m::NAVIGATOR_H, m::LAYER_PROPERTY_H],
-            3.0,
-        );
+        let groups: Vec<(&str, f32)> = [
+            ("navigator", m::NAVIGATOR_H),
+            ("layer_property", m::LAYER_PROPERTY_H),
+            ("layer", 0.0),
+        ]
+        .into_iter()
+        .filter(|(k, _)| !app.ui.hidden.contains(k))
+        .collect();
+        let fixed: Vec<f32> = groups
+            .iter()
+            .take(groups.len().saturating_sub(1))
+            .map(|g| g.1)
+            .collect();
+        let parts = stack(header.bottom(), r.bottom(), &fixed, 3.0);
         let rect = |a: f32, b: f32| Rect::from_min_max(pos2(r.left(), a), pos2(r.right(), b));
-        right::navigator_group(app, ui, rect(parts[0].0, parts[0].1));
-        right::layer_property_group(app, ui, rect(parts[1].0, parts[1].1));
-        right::layer_group(app, ui, rect(parts[2].0, parts[2].1));
+        for ((key, _), (a, b)) in groups.iter().zip(parts) {
+            match *key {
+                "navigator" => right::navigator_group(app, ui, rect(a, b)),
+                "layer_property" => right::layer_property_group(app, ui, rect(a, b)),
+                _ => right::layer_group(app, ui, rect(a, b)),
+            }
+        }
     }
     if let Some(r) = icon_r {
         chrome::icon_column(ui, c, r);
@@ -285,6 +445,9 @@ pub fn frame(app: &mut App, ui: &mut egui::Ui) {
     chrome::timeline_dock(ui, c, timeline);
 
     left::dynamics_popup(&ctx, &mut app.ui);
+    if let Some(s) = left::sub_tool_dialogs(&ctx, &mut app.ui) {
+        app.status = s;
+    }
     left::detail_window(&ctx, &mut app.ui);
     dialogs::dialogs(app, &ctx);
     app.save_subtools_if_idle(&ctx);

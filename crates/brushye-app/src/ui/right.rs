@@ -41,7 +41,8 @@ pub fn navigator_group(app: &mut App, ui: &mut Ui, r: Rect) {
         },
     ];
     let mut tab = app.ui.nav_tab;
-    widgets::title_bar(ui, c, title, &tabs, &mut tab, false);
+    let menu = widgets::title_bar(ui, c, title, &tabs, &mut tab, false);
+    egui::Popup::menu(&menu).show(|ui| navigator_menu(app, ui));
     if tabs[tab].enabled {
         app.ui.nav_tab = tab;
     }
@@ -53,7 +54,12 @@ pub fn navigator_group(app: &mut App, ui: &mut Ui, r: Rect) {
 }
 
 fn navigator(app: &mut App, ui: &mut Ui, c: &Colors, body: Rect) {
-    let controls_h = 44.0;
+    // The control rows are the Navigator's "command bar" (≡ > Show command bar, U-012).
+    let controls_h = if app.ui.prefs.navigator_bar {
+        44.0
+    } else {
+        0.0
+    };
     let preview = Rect::from_min_max(body.min, pos2(body.right(), body.bottom() - controls_h));
     widgets::fill(ui, preview, c.surround);
     if let Some(doc) = app.doc() {
@@ -372,7 +378,17 @@ pub fn layer_property_group(app: &mut App, ui: &mut Ui, r: Rect) {
         },
     ];
     let mut tab = 0;
-    widgets::title_bar(ui, c, title, &tabs, &mut tab, false);
+    let menu = widgets::title_bar(ui, c, title, &tabs, &mut tab, false);
+    egui::Popup::menu(&menu).show(|ui| {
+        ui.add_enabled(false, egui::Button::new("Save as default…"));
+        ui.separator();
+        if ui.button("Hide Layer Property palette").clicked() {
+            app.ui.hidden.insert("layer_property");
+            ui.close();
+        }
+        ui.add_enabled(false, egui::Button::new("Show Search Layer palette"));
+        ui.add_enabled(false, egui::Button::new("Show Animation cels palette"));
+    });
     let body = Rect::from_min_max(pos2(r.left(), title.bottom()), r.max);
     widgets::fill(ui, body, c.body);
     widgets::area(ui, body.shrink2(vec2(6.0, 6.0)), |ui| {
@@ -455,7 +471,8 @@ pub fn layer_group(app: &mut App, ui: &mut Ui, r: Rect) {
         },
     ];
     let mut tab = app.ui.layer_tab;
-    widgets::title_bar(ui, c, title, &tabs, &mut tab, false);
+    let menu = widgets::title_bar(ui, c, title, &tabs, &mut tab, false);
+    egui::Popup::menu(&menu).show(|ui| layer_menu(app, ui));
     if tabs[tab].enabled {
         app.ui.layer_tab = tab;
     }
@@ -482,7 +499,19 @@ fn layers(app: &mut App, ui: &mut Ui, c: &Colors, body: Rect) {
     let active = app.session.active_layer();
     let layer = active.and_then(|a| doc.layer(a)).cloned();
     // Top bar: palette colour, blend mode, opacity (U-006).
-    let top = Rect::from_min_size(body.min, vec2(body.width(), 26.0));
+    // Bars can be hidden from the palette's ≡ menu (U-012); a hidden bar has zero height and its
+    // widgets are clipped away.
+    let prop_h = if app.ui.prefs.layer_property_bar {
+        26.0
+    } else {
+        0.0
+    };
+    let (row1_h, row2_h) = if app.ui.prefs.layer_bar {
+        (21.0, 23.0)
+    } else {
+        (0.0, 0.0)
+    };
+    let top = Rect::from_min_size(body.min, vec2(body.width(), prop_h));
     widgets::fill(ui, top, c.bar);
     widgets::area(ui, top.shrink2(vec2(3.0, 3.0)), |ui| {
         ui.horizontal_centered(|ui| {
@@ -532,12 +561,18 @@ fn layers(app: &mut App, ui: &mut Ui, c: &Colors, body: Rect) {
     });
     // Toolbar rows (U-006).
     let row1 = Rect::from_min_size(
-        pos2(body.left(), top.bottom() + 1.0),
-        vec2(body.width(), 21.0),
+        pos2(
+            body.left(),
+            top.bottom() + if prop_h > 0.0 { 1.0 } else { 0.0 },
+        ),
+        vec2(body.width(), row1_h),
     );
     let row2 = Rect::from_min_size(
-        pos2(body.left(), row1.bottom() + 1.0),
-        vec2(body.width(), 23.0),
+        pos2(
+            body.left(),
+            row1.bottom() + if row1_h > 0.0 { 1.0 } else { 0.0 },
+        ),
+        vec2(body.width(), row2_h),
     );
     widgets::fill(ui, row1, c.bar);
     widgets::fill(ui, row2, c.bar);
@@ -1019,4 +1054,117 @@ fn history_label(cmd: &str, i: usize, doc: &str) -> String {
         "layer.pixels" => "Edit pixels".into(),
         other => other.into(),
     }
+}
+
+/// The Navigator's ≡ menu (U-012).
+fn navigator_menu(app: &mut App, ui: &mut Ui) {
+    let center = app.canvas_center();
+    ui.menu_button("Rotate/Flip", |ui| {
+        if ui.button("Reset rotation").clicked() {
+            let a = app.view.angle;
+            app.view.rotate_by(-a, center);
+            ui.close();
+        }
+        for (label, deg) in [
+            ("Rotate 90", 90.0),
+            ("Rotate 180", 180.0),
+            ("Rotate 270", 270.0),
+        ] {
+            if ui.button(label).clicked() {
+                let a = app.view.angle;
+                app.view.rotate_by(deg - a, center);
+                ui.close();
+            }
+        }
+        ui.add_enabled(false, egui::Button::new("Flip horizontal"));
+        ui.add_enabled(false, egui::Button::new("Flip vertical"));
+    });
+    if ui.button("Zoom in").clicked() {
+        app.view.step_zoom(1, center);
+        ui.close();
+    }
+    if ui.button("Zoom out").clicked() {
+        app.view.step_zoom(-1, center);
+        ui.close();
+    }
+    if ui.button("100%").clicked() {
+        app.actual_size();
+        ui.close();
+    }
+    if ui.button("200%").clicked() {
+        app.actual_size();
+        app.view.set_zoom(2.0, center);
+        ui.close();
+    }
+    if ui.button("Fit to screen").clicked() || ui.button("Reset display").clicked() {
+        app.fit();
+        ui.close();
+    }
+    ui.separator();
+    if ui.button("Fit to navigator").clicked() {
+        app.fit();
+        ui.close();
+    }
+    ui.add_enabled(false, egui::Button::new("Print size"));
+    ui.separator();
+    if ui
+        .add(egui::Button::selectable(
+            app.ui.prefs.navigator_bar,
+            "Show command bar",
+        ))
+        .clicked()
+    {
+        app.ui.prefs.navigator_bar = !app.ui.prefs.navigator_bar;
+        app.ui.sets_dirty = true;
+        ui.close();
+    }
+    ui.separator();
+    if ui.button("Hide Navigator palette").clicked() {
+        app.ui.hidden.insert("navigator");
+        ui.close();
+    }
+    ui.add_enabled(false, egui::Button::new("Show Sub View palette"));
+    ui.add_enabled(false, egui::Button::new("Show Item bank palette"));
+    if ui.button("Show Information palette").clicked() {
+        app.ui.nav_tab = 3;
+        ui.close();
+    }
+}
+
+/// The Layer palette's ≡ menu (U-012): the Layer menu's first groups, display toggles, and the
+/// hide/show group.
+fn layer_menu(app: &mut App, ui: &mut Ui) {
+    super::menus::layer_context_items(app, ui);
+    ui.separator();
+    ui.add_enabled_ui(false, |ui| {
+        ui.menu_button("Thumbnail size", |_| {});
+        ui.menu_button("Thumbnail display settings", |_| {});
+    });
+    for (label, which) in [("Show property bar", 0), ("Show command bar", 1)] {
+        let on = if which == 0 {
+            app.ui.prefs.layer_property_bar
+        } else {
+            app.ui.prefs.layer_bar
+        };
+        if ui.add(egui::Button::selectable(on, label)).clicked() {
+            if which == 0 {
+                app.ui.prefs.layer_property_bar = !on;
+            } else {
+                app.ui.prefs.layer_bar = !on;
+            }
+            app.ui.sets_dirty = true;
+            ui.close();
+        }
+    }
+    ui.add_enabled(false, egui::Button::new("Set command bar below list"));
+    ui.separator();
+    if ui.button("Hide Layer palette").clicked() {
+        app.ui.hidden.insert("layer");
+        ui.close();
+    }
+    if ui.button("Show History palette").clicked() {
+        app.ui.layer_tab = 1;
+        ui.close();
+    }
+    ui.add_enabled(false, egui::Button::new("Show Auto Action palette"));
 }

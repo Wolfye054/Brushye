@@ -613,6 +613,7 @@ impl App {
                 .subtools
                 .insert(tool.key().into(), crate::ui::tools::to_json(set));
         }
+        self.settings.ui = self.ui.ui_json();
         self.save_settings();
     }
 
@@ -627,10 +628,9 @@ impl App {
                 if let Some(set) = self.ui.sets.get_mut(&tool) {
                     let g = set.group;
                     let group = &mut set.groups[g];
-                    group.items.push(crate::ui::tools::SubTool {
-                        name: name.clone(),
-                        preset,
-                    });
+                    group
+                        .items
+                        .push(crate::ui::tools::SubTool::new(tool, &name, preset));
                     group.selected = group.items.len() - 1;
                     self.ui.sets_dirty = true;
                     self.status = format!("Imported “{name}”");

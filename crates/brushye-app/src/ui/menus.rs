@@ -520,13 +520,24 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
         app.ui.visible.tool = !v.tool;
     }
     let tool = super::tools::info(app.ui.tool).name;
-    for label in [
-        format!("Sub Tool: {tool}"),
-        format!("Tool property: {tool}"),
-        format!("Brush size: {tool}"),
+    let shown = |app: &App, key: &str, dock: bool| dock && !app.ui.hidden.contains(key);
+    let toggle = |app: &mut App, key: &'static str, right: bool| {
+        if right {
+            app.ui.visible.right_dock = true;
+        } else {
+            app.ui.visible.left_dock = true;
+        }
+        if !app.ui.hidden.remove(key) {
+            app.ui.hidden.insert(key);
+        }
+    };
+    for (label, key) in [
+        (format!("Sub Tool: {tool}"), "sub_tool"),
+        (format!("Tool property: {tool}"), "tool_property"),
+        (format!("Brush size: {tool}"), "brush_size"),
     ] {
-        if check(ui, &label, "", v.left_dock, true) {
-            app.ui.visible.left_dock = !v.left_dock;
+        if check(ui, &label, "", shown(app, key, v.left_dock), true) {
+            toggle(app, key, false);
         }
     }
     let detail = app.ui.detail_open;
@@ -551,21 +562,35 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
             ui,
             label,
             "",
-            v.left_dock && app.ui.colour.tab == i,
+            shown(app, "colour", v.left_dock) && app.ui.colour.tab == i,
             available,
         ) {
             app.ui.visible.left_dock = true;
+            app.ui.hidden.remove("colour");
             app.ui.colour.tab = i;
         }
     }
     ui.separator();
-    if check(ui, "Layer", "", v.right_dock && app.ui.layer_tab == 0, true) {
+    if check(
+        ui,
+        "Layer",
+        "",
+        shown(app, "layer", v.right_dock) && app.ui.layer_tab == 0,
+        true,
+    ) {
         app.ui.visible.right_dock = true;
+        app.ui.hidden.remove("layer");
         app.ui.layer_tab = 0;
     }
     item(ui, "Search layer", "", false);
-    if check(ui, "Layer property", "", v.right_dock, true) {
-        app.ui.visible.right_dock = !v.right_dock;
+    if check(
+        ui,
+        "Layer property",
+        "",
+        shown(app, "layer_property", v.right_dock),
+        true,
+    ) {
+        toggle(app, "layer_property", true);
     }
     ui.separator();
     off(ui, &["Animation cels", "Timeline"]);
@@ -574,10 +599,11 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
         ui,
         "Navigator",
         "",
-        v.right_dock && app.ui.nav_tab == 0,
+        shown(app, "navigator", v.right_dock) && app.ui.nav_tab == 0,
         true,
     ) {
         app.ui.visible.right_dock = true;
+        app.ui.hidden.remove("navigator");
         app.ui.nav_tab = 0;
     }
     item(ui, "Sub view", "", false);
@@ -586,10 +612,11 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
         ui,
         "History",
         "",
-        v.right_dock && app.ui.layer_tab == 1,
+        shown(app, "layer", v.right_dock) && app.ui.layer_tab == 1,
         true,
     ) {
         app.ui.visible.right_dock = true;
+        app.ui.hidden.remove("layer");
         app.ui.layer_tab = 1;
     }
     item(ui, "Auto action", "", false);
@@ -597,10 +624,11 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
         ui,
         "Information",
         "",
-        v.right_dock && app.ui.nav_tab == 3,
+        shown(app, "navigator", v.right_dock) && app.ui.nav_tab == 3,
         true,
     ) {
         app.ui.visible.right_dock = true;
+        app.ui.hidden.remove("navigator");
         app.ui.nav_tab = 3;
     }
     item(ui, "Item bank", "", false);
@@ -698,6 +726,16 @@ pub fn shortcuts(app: &mut App, ctx: &egui::Context) {
     }
     if shortcut(ctx, M::NONE, Key::B) {
         cycle(app, &[ToolId::Brush, ToolId::Airbrush]);
+    }
+    // X switches the active chip between main and sub colour; it doesn't swap them (U-013).
+    if shortcut(ctx, M::NONE, Key::X) {
+        use super::colour::Chip;
+        let next = if app.ui.colour.active == Chip::Main {
+            Chip::Sub
+        } else {
+            Chip::Main
+        };
+        app.ui.colour.select(next);
     }
     if shortcut(ctx, M::NONE, Key::E) {
         app.ui.tool = ToolId::Eraser;
