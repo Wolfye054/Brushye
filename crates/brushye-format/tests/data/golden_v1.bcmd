@@ -1,0 +1,13 @@
+# Script for tests/data/golden_v1.brsh (format version 1). Regenerating the file is a format
+# decision: older golden files must keep loading.
+doc.new 300 200 dpi=144 paper=#fffaf0
+layer.new L1 name="Paper texture"
+layer.fill L1 color=#e8dcc8
+layer.set L1 opacity=60 blend=multiply
+layer.new L2 name="Ink"
+brush.stroke L2 color=#1d3557 size=10 size_pressure=20 samples=[20,180,0.3,0;150,30,1,8000;280,170,0.4,16000]
+brush.stroke L2 color=#e63946 size=40 hardness=2 opacity=70 samples=[150,120,1,0]
+layer.new L3 name="Hidden notes" above=L1
+layer.pixels L3 x=290 y=190 w=2 h=1 data=b64:/wAA//8AAIA=
+layer.show L3 visible=false
+layer.select L2

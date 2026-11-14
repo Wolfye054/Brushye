@@ -1,6 +1,6 @@
 [package]
 name = "brushye-format"
-description = "Brushye file formats: PNG export/import now; .brsh native format in M5 (DECISIONS D-014)"
+description = "Brushye file formats: PNG, the .brsh native document format and .brshbrush user brushes (DECISIONS D-014)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,3 +13,11 @@ workspace = true
 [dependencies]
 brushye-core = { path = "../brushye-core" }
 png = "0.18"
+serde_json = "1"
+# Pinned exactly (D-016): bumps are reviewed. 7.3 is the newest release that supports our MSRV.
+zip = { version = "=7.3.0", default-features = false, features = ["deflate"] }
+zstd = "0.14"
+
+[dev-dependencies]
+brushye-command = { path = "../brushye-command" }
+proptest = "1"
