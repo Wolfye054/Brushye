@@ -403,7 +403,7 @@ impl App {
         self.live.is_none() && pos + 1 < steps.len()
     }
 
-    fn active_layer(&self) -> Option<Layer> {
+    pub(crate) fn active_layer(&self) -> Option<Layer> {
         let d = self.doc()?;
         let id = self.session.active_layer()?;
         d.layer(id).map(|l| Layer::clone(l))
@@ -479,9 +479,7 @@ impl App {
     }
 
     pub(crate) fn new_raster_layer(&mut self) {
-        let id = self.doc().map_or(1, |d| {
-            d.layers().iter().map(|l| l.id.0).max().unwrap_or(0) + 1
-        });
+        let id = self.next_layer_id().0;
         // CSP (U-014): with an expanded folder selected the new layer goes inside it, at the
         // top; otherwise directly above the selected layer (a collapsed folder included).
         let active = self.session.active_layer();
@@ -497,6 +495,74 @@ impl App {
             above: if into_folder.is_some() { None } else { active },
             into: into_folder,
         }));
+    }
+
+    fn next_layer_id(&self) -> LayerId {
+        LayerId(self.doc().map_or(1, |d| {
+            d.layers().iter().map(|l| l.id.0).max().unwrap_or(0) + 1
+        }))
+    }
+
+    /// The selected layer is a folder.
+    pub(crate) fn active_is_folder(&self) -> bool {
+        self.active_layer().is_some_and(|l| l.is_folder())
+    }
+
+    /// CSP greys out Delete Layer when deleting would leave no layer (U-014).
+    pub(crate) fn can_delete_layer(&self) -> bool {
+        let (Some(d), Some(id)) = (self.doc(), self.session.active_layer()) else {
+            return false;
+        };
+        self.can_edit_layer() && d.subtree(id).is_ok_and(|r| r.len() < d.layers().len())
+    }
+
+    /// Layer > New Layer Folder: placed like a new raster layer (inside an expanded selected
+    /// folder, otherwise above the selection).
+    pub(crate) fn new_folder(&mut self) {
+        let id = self.next_layer_id();
+        let active = self.session.active_layer();
+        let into = active.filter(|a| {
+            self.doc()
+                .and_then(|d| d.layer(*a).map(|l| l.is_folder() && l.expanded))
+                .unwrap_or(false)
+        });
+        self.exec(Command::LayerNew(commands::LayerNew {
+            layer: id,
+            kind: Some(brushye_command::core::LayerKind::Folder),
+            name: Some(format!("Folder {}", id.0)),
+            above: if into.is_some() { None } else { active },
+            into,
+        }));
+    }
+
+    /// Layer > Create folder and insert layer (Ctrl+G).
+    pub(crate) fn group_active(&mut self) {
+        if let Some(layer) = self.session.active_layer() {
+            let folder = self.next_layer_id();
+            self.exec(Command::LayerGroup(commands::LayerGroup {
+                folder,
+                layer,
+                name: None,
+            }));
+        }
+    }
+
+    /// Layer > Ungroup Layer Folder (Ctrl+Shift+G).
+    pub(crate) fn ungroup_active(&mut self) {
+        if self.active_is_folder()
+            && let Some(folder) = self.session.active_layer()
+        {
+            self.exec(Command::LayerUngroup(commands::LayerUngroup { folder }));
+        }
+    }
+
+    /// Layer Settings > Clip to Layer Below (Ctrl+Alt+G).
+    pub(crate) fn toggle_clip(&mut self) {
+        if let Some(l) = self.active_layer() {
+            let mut s = set_cmd(l.id);
+            s.clip = Some(!l.clip);
+            self.exec(Command::LayerSet(s));
+        }
     }
 
     pub(crate) fn delete_layer(&mut self) {

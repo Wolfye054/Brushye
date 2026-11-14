@@ -533,7 +533,13 @@ fn layers(app: &mut App, ui: &mut Ui, c: &Colors, body: Rect) {
                     .width(74.0)
                     .selected_text(blend_label(blend))
                     .show_ui(ui, |ui| {
-                        for &mode in BlendMode::ALL {
+                        // Folders get Through as the first entry (U-014).
+                        let folder = layer.as_ref().is_some_and(|l| l.is_folder());
+                        let modes = folder
+                            .then_some(BlendMode::Through)
+                            .into_iter()
+                            .chain(BlendMode::ALL.iter().copied());
+                        for mode in modes {
                             if ui
                                 .selectable_label(blend == mode, blend_label(mode))
                                 .clicked()
@@ -635,19 +641,26 @@ fn layers(app: &mut App, ui: &mut Ui, c: &Colors, body: Rect) {
                 false,
                 false,
             );
-            widgets::icon_button(
+            let clip = layer.as_ref().is_some_and(|l| l.clip);
+            if widgets::icon_button(
                 ui,
                 c,
                 icons::PAPERCLIP,
                 "Clip to layer below",
                 s,
-                false,
-                false,
-            );
+                can_edit,
+                clip,
+            )
+            .clicked()
+            {
+                app.toggle_clip();
+            }
         });
     });
     let mut new_layer = false;
+    let mut new_folder = false;
     let mut delete = false;
+    let can_delete = app.can_delete_layer();
     widgets::area(ui, row2, |ui| {
         ui.horizontal_centered(|ui| {
             widgets::icon_button(
@@ -662,7 +675,7 @@ fn layers(app: &mut App, ui: &mut Ui, c: &Colors, body: Rect) {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
                 delete =
-                    widgets::icon_button(ui, c, icons::TRASH, "Delete layer", s, can_edit, false)
+                    widgets::icon_button(ui, c, icons::TRASH, "Delete layer", s, can_delete, false)
                         .clicked();
                 widgets::icon_button(
                     ui,
@@ -700,15 +713,16 @@ fn layers(app: &mut App, ui: &mut Ui, c: &Colors, body: Rect) {
                     false,
                     false,
                 );
-                widgets::icon_button(
+                new_folder = widgets::icon_button(
                     ui,
                     c,
                     icons::FOLDER_SIMPLE_PLUS,
                     "New layer folder",
                     s,
+                    true,
                     false,
-                    false,
-                );
+                )
+                .clicked();
                 widgets::icon_button(
                     ui,
                     c,
@@ -734,13 +748,16 @@ fn layers(app: &mut App, ui: &mut Ui, c: &Colors, body: Rect) {
     if new_layer {
         app.new_raster_layer();
     }
+    if new_folder {
+        app.new_folder();
+    }
     if delete && let Some(l) = &layer {
         app.exec(Command::LayerDelete(commands::LayerDelete { layer: l.id }));
     }
     // Layer rows, top to bottom (U-006), then the paper.
     let list = Rect::from_min_max(pos2(body.left(), row2.bottom() + 1.0), body.max);
     widgets::fill(ui, list, c.body);
-    let layers: Vec<Arc<Layer>> = doc.layers().iter().rev().cloned().collect();
+    let layers = palette_rows(&doc);
     let mut drag_target: Option<(LayerId, usize)> = None;
     widgets::area(ui, list, |ui| {
         egui::ScrollArea::vertical()
@@ -748,9 +765,9 @@ fn layers(app: &mut App, ui: &mut Ui, c: &Colors, body: Rect) {
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 let mut rows = Vec::new();
-                for (i, l) in layers.iter().enumerate() {
-                    let rr = layer_row(app, ui, c, &doc, l, active == Some(l.id));
-                    rows.push((rr, l.id, i));
+                for (i, row) in layers.iter().enumerate() {
+                    let rr = layer_row(app, ui, c, &doc, row, active == Some(row.layer.id));
+                    rows.push((rr, row.layer.id, i));
                 }
                 if let Some(p) = doc.paper {
                     paper_row(ui, c, p.0);
@@ -771,7 +788,7 @@ fn layers(app: &mut App, ui: &mut Ui, c: &Colors, body: Rect) {
             });
     });
     if let Some((id, j)) = drag_target {
-        let target = layers[j].id;
+        let target = layers[j].layer.id;
         if target != id {
             // Rows are top-first: put the layer directly above the row it was dropped on.
             app.exec(Command::LayerMove(commands::LayerMove {
@@ -792,20 +809,79 @@ fn blend_label(m: BlendMode) -> String {
         .unwrap_or_default()
 }
 
-/// One 40 px layer row: eye, editing pen, thumbnail, "opacity % blend" over the name.
+/// One palette row: a layer at its folder depth, with how its clip bar shows.
+struct PaletteRow {
+    layer: Arc<Layer>,
+    depth: usize,
+    /// `Some(true)`: clipped (red bar); `Some(false)`: clip set but off, because the base is
+    /// a Through folder (grey bar, U-014 / L-006).
+    clip: Option<bool>,
+}
+
+/// The rows the Layer palette shows, top to bottom: every layer whose folders are all open,
+/// indented by folder depth (U-014).
+fn palette_rows(doc: &Document) -> Vec<PaletteRow> {
+    fn walk(doc: &Document, parent: Option<LayerId>, depth: usize, out: &mut Vec<PaletteRow>) {
+        let kids = doc.children(parent);
+        for (i, l) in kids.iter().enumerate().rev() {
+            let clip = l.clip.then(|| {
+                // The clip base: the nearest unclipped sibling below.
+                kids[..i]
+                    .iter()
+                    .rev()
+                    .find(|b| !b.clip)
+                    .is_some_and(|b| !(b.is_folder() && b.blend == BlendMode::Through))
+            });
+            out.push(PaletteRow {
+                layer: Arc::clone(l),
+                depth,
+                clip,
+            });
+            if l.is_folder() && l.expanded {
+                walk(doc, Some(l.id), depth + 1, out);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(doc, None, 0, &mut out);
+    out
+}
+
+/// Folder rows are shorter than layer rows (they have no thumbnail, U-014).
+const FOLDER_ROW: f32 = 31.0;
+/// Indent per folder level (U-014).
+const INDENT: f32 = 16.0;
+/// Width of the clip bar; the thumbnail moves right by it (U-014).
+const CLIP_BAR: f32 = 4.0;
+
+/// One layer row: eye, editing pen, then at the folder depth either a folder's arrow and icon
+/// or a layer's thumbnail (after the clip bar when clipped), and "opacity % blend" over the
+/// name.
 fn layer_row(
     app: &mut App,
     ui: &mut Ui,
     c: &Colors,
     doc: &Document,
-    l: &Layer,
+    row: &PaletteRow,
     selected: bool,
 ) -> (Rect, egui::Id) {
+    let l: &Layer = &row.layer;
     let w = ui.available_width();
-    let (rr, resp) = ui.allocate_exact_size(vec2(w, m::LAYER_ROW), Sense::click_and_drag());
-    let eye = Rect::from_min_size(rr.min, vec2(20.0, 40.0));
-    let pen = Rect::from_min_size(pos2(eye.right(), rr.top()), vec2(19.0, 40.0));
-    let thumb = Rect::from_min_size(pos2(pen.right() + 2.0, rr.top() + 1.0), vec2(38.0, 38.0));
+    let h = if l.is_folder() {
+        FOLDER_ROW
+    } else {
+        m::LAYER_ROW
+    };
+    let (rr, resp) = ui.allocate_exact_size(vec2(w, h), Sense::click_and_drag());
+    let eye = Rect::from_min_size(rr.min, vec2(20.0, h - 1.0));
+    let pen = Rect::from_min_size(pos2(eye.right(), rr.top()), vec2(19.0, h - 1.0));
+    let x0 = pen.right() + 2.0 + INDENT * row.depth as f32;
+    let shift = if row.clip.is_some() {
+        CLIP_BAR + 2.0
+    } else {
+        0.0
+    };
+    let thumb = Rect::from_min_size(pos2(x0 + shift, rr.top() + 1.0), vec2(38.0, 38.0));
     if selected {
         widgets::fill(
             ui,
@@ -834,23 +910,70 @@ fn layer_row(
     if selected {
         widgets::draw_icon(ui, pen.center(), icons::PEN_NIB, 12.0, c.icon);
     }
-    let tex = layer_thumbnail(app, ui, doc, l);
-    ui.painter().image(
-        tex.id(),
-        thumb,
-        Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
-        Color32::WHITE,
-    );
-    ui.painter().rect_stroke(
-        thumb,
-        0.0,
-        Stroke::new(1.0, c.splitter),
-        egui::StrokeKind::Outside,
-    );
-    let tx = thumb.right() + 6.0;
+    let (tx, line1, line2) = if l.is_folder() {
+        // Disclosure arrow (opens/closes, not a History step) and the folder icon.
+        let arrow = Rect::from_min_size(pos2(x0, rr.top()), vec2(14.0, h - 1.0));
+        let open = l.expanded;
+        widgets::draw_icon(
+            ui,
+            arrow.center(),
+            if open {
+                icons::CARET_DOWN
+            } else {
+                icons::CARET_RIGHT
+            },
+            10.0,
+            c.icon,
+        );
+        if ui
+            .interact(arrow, resp.id.with("arrow"), Sense::click())
+            .clicked()
+        {
+            app.exec(Command::LayerExpand(commands::LayerExpand {
+                folder: l.id,
+                open: !open,
+            }));
+        }
+        widgets::draw_icon(
+            ui,
+            pos2(arrow.right() + 10.0, arrow.center().y),
+            if open {
+                icons::FOLDER_OPEN
+            } else {
+                icons::FOLDER
+            },
+            15.0,
+            c.icon,
+        );
+        (arrow.right() + 24.0, rr.top() + 9.0, rr.top() + 21.0)
+    } else {
+        if let Some(on) = row.clip {
+            let bar = Rect::from_min_size(pos2(x0, rr.top() + 1.0), vec2(CLIP_BAR, 38.0));
+            let col = if on {
+                Color32::from_rgb(226, 112, 112)
+            } else {
+                Color32::from_gray(150)
+            };
+            ui.painter().rect_filled(bar, 0.0, col);
+        }
+        let tex = layer_thumbnail(app, ui, doc, l);
+        ui.painter().image(
+            tex.id(),
+            thumb,
+            Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
+            Color32::WHITE,
+        );
+        ui.painter().rect_stroke(
+            thumb,
+            0.0,
+            Stroke::new(1.0, c.splitter),
+            egui::StrokeKind::Outside,
+        );
+        (thumb.right() + 6.0, rr.top() + 11.0, rr.top() + 29.0)
+    };
     let small = egui::FontId::proportional(10.0);
     ui.painter().text(
-        pos2(tx, rr.top() + 11.0),
+        pos2(tx, line1),
         egui::Align2::LEFT_CENTER,
         format!("{} % {}", l.opacity, blend_label(l.blend)),
         small,
@@ -869,7 +992,7 @@ fn layer_row(
         .as_ref()
         .is_some_and(|(id, _)| *id == l.id.0);
     if renaming {
-        let r = Rect::from_min_size(pos2(tx, rr.top() + 21.0), vec2(rr.right() - tx - 4.0, 17.0));
+        let r = Rect::from_min_size(pos2(tx, line2 - 8.0), vec2(rr.right() - tx - 4.0, 17.0));
         let mut done = None;
         widgets::area(ui, r, |ui| {
             if let Some((_, text)) = app.ui.renaming.as_mut() {
@@ -890,7 +1013,7 @@ fn layer_row(
         }
     } else {
         ui.painter().text(
-            pos2(tx, rr.top() + 29.0),
+            pos2(tx, line2),
             egui::Align2::LEFT_CENTER,
             format!(
                 "{}{}",
@@ -1054,6 +1177,9 @@ fn history_label(cmd: &str, i: usize, doc: &str) -> String {
         "layer.set" => "Layer settings".into(),
         "layer.fill" => "Fill".into(),
         "layer.pixels" => "Edit pixels".into(),
+        // CSP's own labels (H-002).
+        "layer.group" => "Change order of layer".into(),
+        "layer.ungroup" => "Ungroup Layer Folder".into(),
         other => other.into(),
     }
 }

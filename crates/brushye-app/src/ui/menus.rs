@@ -250,7 +250,6 @@ fn animation_menu(ui: &mut Ui) {
 
 /// The Layer menu's first four groups (also the layer list's right-click menu, U-006).
 pub fn layer_context_items(app: &mut App, ui: &mut Ui) {
-    let editable = app.can_edit_layer();
     let has_layer = app.session.active_layer().is_some();
     if item(ui, "New raster layer", "Ctrl+Shift+N", true) {
         app.new_raster_layer();
@@ -274,16 +273,22 @@ pub fn layer_context_items(app: &mut App, ui: &mut Ui) {
         item(ui, "Paper…", "", false);
     });
     sub(ui, "New correction layer", false, |_| {});
-    off(
+    if item(ui, "New layer folder", "", true) {
+        app.new_folder();
+    }
+    if item(ui, "Create folder and insert layer", "Ctrl+G", has_layer) {
+        app.group_active();
+    }
+    if item(
         ui,
-        &[
-            "New layer folder",
-            "Create folder and insert layer",
-            "Ungroup layer folder",
-            "Duplicate layer",
-        ],
-    );
-    if item(ui, "Delete layer", "", editable) {
+        "Ungroup layer folder",
+        "Ctrl+Shift+G",
+        app.active_is_folder(),
+    ) {
+        app.ungroup_active();
+    }
+    item(ui, "Duplicate layer", "", false);
+    if item(ui, "Delete layer", "", app.can_delete_layer()) {
         app.delete_layer();
     }
     ui.separator();
@@ -291,14 +296,17 @@ pub fn layer_context_items(app: &mut App, ui: &mut Ui) {
     sub(ui, "Ruler/Frame", false, |_| {});
     sub(ui, "File object", false, |_| {});
     sub(ui, "Layer settings", has_layer, |ui| {
-        off(
+        off(ui, &["Set as reference layer", "Set as draft layer"]);
+        let clip = app.active_layer().is_some_and(|l| l.clip);
+        if check(
             ui,
-            &[
-                "Set as reference layer",
-                "Set as draft layer",
-                "Clip to layer below",
-            ],
-        );
+            "Clip to layer below",
+            "Ctrl+Alt+G",
+            clip,
+            app.can_edit_layer(),
+        ) {
+            app.toggle_clip();
+        }
         let (locked, lock_alpha, visible) = app.active_flags();
         if check(ui, "Lock layer", "", locked, true) {
             app.toggle_lock(false);
@@ -681,6 +689,15 @@ pub fn shortcuts(app: &mut App, ctx: &egui::Context) {
     }
     if shortcut(ctx, cmd | M::SHIFT, Key::N) {
         app.new_raster_layer();
+    }
+    if shortcut(ctx, cmd | M::ALT, Key::G) {
+        app.toggle_clip();
+    }
+    if shortcut(ctx, cmd | M::SHIFT, Key::G) {
+        app.ungroup_active();
+    }
+    if shortcut(ctx, cmd, Key::G) {
+        app.group_active();
     }
     if shortcut(ctx, cmd, Key::N) {
         app.request(Action::New, ctx);
