@@ -226,8 +226,7 @@ pub struct Dab {
     pub axis: [f64; 2],
 }
 
-/// The path a stroke's dabs follow: stabilized, smoothed input (B-002, B-007).
-pub fn stroke_path(s: &BrushSettings, samples: &[Sample]) -> path::Polyline {
+fn path_points(samples: &[Sample]) -> Vec<path::Pt> {
     // Mouse input counts as full pressure (B-004).
     let raw: Vec<path::Pt> = samples
         .iter()
@@ -237,15 +236,39 @@ pub fn stroke_path(s: &BrushSettings, samples: &[Sample]) -> path::Polyline {
             p: q.pressure.map_or(1.0, f64::from),
         })
         .collect();
-    let pts = path::stabilize(&path::dedup(raw), s.stabilization);
+    path::dedup(raw)
+}
+
+/// The path a stroke's dabs follow: stabilized, smoothed input (B-002, B-007).
+pub fn stroke_path(s: &BrushSettings, samples: &[Sample]) -> path::Polyline {
+    let pts = path::stabilize(&path_points(samples), s.stabilization);
     path::Polyline::new(path::spline(&pts))
 }
 
 /// Dabs of a stroke, in order (B-002 placement, B-004/B-005 dynamics).
 pub fn place_dabs(s: &BrushSettings, samples: &[Sample]) -> Vec<Dab> {
-    let line = stroke_path(s, samples);
+    lattice(s, &stroke_path(s, samples), None).0
+}
+
+/// Dabs of a stroke whose pen is still down, and how many of them are final: those cannot
+/// change as more samples arrive (they lie on the final prefix of the path, see
+/// [`path::final_length`]). The final ones equal the first dabs of the finished stroke when
+/// stabilization is off; with stabilization the finished stroke adds the catch-up at release.
+pub fn place_dabs_live(s: &BrushSettings, samples: &[Sample]) -> (Vec<Dab>, usize) {
+    let pts = path::stabilize_live(&path_points(samples), s.stabilization);
+    let stable = path::final_length(&pts);
+    lattice(s, &path::Polyline::new(path::spline(&pts)), Some(stable))
+}
+
+/// Dabs along a path. With `stable = Some(len)`, also counts the dabs at arc length ≤ len
+/// (`Some(None)`: none are final yet).
+fn lattice(
+    s: &BrushSettings,
+    line: &path::Polyline,
+    stable: Option<Option<f64>>,
+) -> (Vec<Dab>, usize) {
     if line.is_empty() {
-        return Vec::new();
+        return (Vec::new(), 0);
     }
     let total = line.len();
     let gap = s.gap.percent();
@@ -255,6 +278,7 @@ pub fn place_dabs(s: &BrushSettings, samples: &[Sample]) -> Vec<Dab> {
     let f = |d: &Option<Dynamics>, p: f64| d.as_ref().map_or(1.0, |d| d.factor(p));
 
     let mut dabs = Vec::new();
+    let mut n_stable = 0usize;
     let mut seg = 0usize;
     let mut t = 0.0f64;
     let mut k: u64 = 0;
@@ -282,6 +306,11 @@ pub fn place_dabs(s: &BrushSettings, samples: &[Sample]) -> Vec<Dab> {
                 density,
                 axis: s.axis(at.dir),
             });
+            if let Some(Some(len)) = stable
+                && t <= len
+            {
+                n_stable = dabs.len();
+            }
         }
         if total == 0.0 {
             break;
@@ -293,21 +322,116 @@ pub fn place_dabs(s: &BrushSettings, samples: &[Sample]) -> Vec<Dab> {
             t + spacing
         };
     }
-    dabs
+    if stable.is_none() {
+        n_stable = dabs.len();
+    }
+    (dabs, n_stable)
 }
 
 const CHUNK: usize = 64;
+type ChunkKey = (i32, i32);
 
 /// Per-pixel stroke state: transmittance ∏(1 − c·D) and the highest dab opacity.
+#[derive(Clone)]
 struct Chunk {
     t: [f64; CHUNK * CHUNK],
     o: [f64; CHUNK * CHUNK],
 }
 
+impl Chunk {
+    fn empty() -> Box<Self> {
+        Box::new(Chunk {
+            t: [1.0; CHUNK * CHUNK],
+            o: [0.0; CHUNK * CHUNK],
+        })
+    }
+}
+
+fn shape_of(s: &BrushSettings, d: &Dab) -> Shape {
+    Shape {
+        r: d.size / 2.0,
+        thickness: s.thickness,
+        axis: d.axis,
+        aa: s.aa,
+        hardness: s.hardness,
+    }
+}
+
+/// Pixel bounds [x0, x1) × [y0, y1) a dab can touch, clipped to the canvas.
+fn dab_bounds(bounds: (u32, u32), s: &BrushSettings, d: &Dab) -> (i64, i64, i64, i64) {
+    let shape = shape_of(s, d);
+    let (ox, oy) = shape.centre_offset();
+    let (cx, cy) = (d.x + ox, d.y + oy);
+    let reach = shape.reach();
+    (
+        ((cx - reach - 1.0).floor().max(0.0)) as i64,
+        ((cy - reach - 1.0).floor().max(0.0)) as i64,
+        ((cx + reach + 1.0).ceil()).min(f64::from(bounds.0)) as i64,
+        ((cy + reach + 1.0).ceil()).min(f64::from(bounds.1)) as i64,
+    )
+}
+
+/// Chunks a dab's bounds overlap.
+fn dab_chunks(bounds: (u32, u32), s: &BrushSettings, d: &Dab) -> Vec<ChunkKey> {
+    let (x0, y0, x1, y1) = dab_bounds(bounds, s, d);
+    let c = CHUNK as i64;
+    let mut out = Vec::new();
+    if x0 >= x1 || y0 >= y1 {
+        return out;
+    }
+    for cy in y0 / c..=(y1 - 1) / c {
+        for cx in x0 / c..=(x1 - 1) / c {
+            out.push((cx as i32, cy as i32));
+        }
+    }
+    out
+}
+
+/// Add one dab to a chunk map. Each pixel is updated at most once per dab, so the visiting
+/// order inside a dab doesn't matter; dabs are applied in stroke order.
+fn dab_into(
+    chunks: &mut BTreeMap<ChunkKey, Box<Chunk>>,
+    bounds: (u32, u32),
+    s: &BrushSettings,
+    d: &Dab,
+) {
+    let shape = shape_of(s, d);
+    let (ox, oy) = shape.centre_offset();
+    let (cx, cy) = (d.x + ox, d.y + oy);
+    let (x0, y0, x1, y1) = dab_bounds(bounds, s, d);
+    let c = CHUNK as i64;
+    let mut hits: Vec<(usize, f64)> = Vec::new();
+    for key in dab_chunks(bounds, s, d) {
+        let (kx, ky) = (i64::from(key.0) * c, i64::from(key.1) * c);
+        let (xa, xb) = (x0.max(kx), x1.min(kx + c));
+        let (ya, yb) = (y0.max(ky), y1.min(ky + c));
+        hits.clear();
+        for py in ya..yb {
+            let dy = py as f64 + 0.5 - cy;
+            for px in xa..xb {
+                let cov = shape.coverage(px as f64 + 0.5 - cx, dy);
+                if cov > 0.0 {
+                    hits.push(((py - ky) as usize * CHUNK + (px - kx) as usize, cov));
+                }
+            }
+        }
+        if hits.is_empty() {
+            continue;
+        }
+        let chunk = chunks.entry(key).or_insert_with(Chunk::empty);
+        for &(i, cov) in &hits {
+            chunk.t[i] *= 1.0 - cov * d.density;
+            if d.opacity > chunk.o[i] {
+                chunk.o[i] = d.opacity;
+            }
+        }
+    }
+}
+
 /// The stroke buffer (B-003): built up by the dabs of one stroke, committed at the end.
 pub struct StrokeBuffer {
     bounds: (u32, u32),
-    chunks: BTreeMap<(i32, i32), Box<Chunk>>,
+    chunks: BTreeMap<ChunkKey, Box<Chunk>>,
 }
 
 impl StrokeBuffer {
@@ -320,40 +444,7 @@ impl StrokeBuffer {
 
     /// Add one dab.
     pub fn dab(&mut self, s: &BrushSettings, d: &Dab) {
-        let shape = Shape {
-            r: d.size / 2.0,
-            thickness: s.thickness,
-            axis: d.axis,
-            aa: s.aa,
-            hardness: s.hardness,
-        };
-        let (ox, oy) = shape.centre_offset();
-        let (cx, cy) = (d.x + ox, d.y + oy);
-        let reach = shape.reach();
-        let x0 = ((cx - reach - 1.0).floor().max(0.0)) as i64;
-        let y0 = ((cy - reach - 1.0).floor().max(0.0)) as i64;
-        let x1 = ((cx + reach + 1.0).ceil()).min(f64::from(self.bounds.0)) as i64;
-        let y1 = ((cy + reach + 1.0).ceil()).min(f64::from(self.bounds.1)) as i64;
-        for py in y0..y1 {
-            for px in x0..x1 {
-                let c = shape.coverage(px as f64 + 0.5 - cx, py as f64 + 0.5 - cy);
-                if c <= 0.0 {
-                    continue;
-                }
-                let key = ((px / CHUNK as i64) as i32, (py / CHUNK as i64) as i32);
-                let ch = self.chunks.entry(key).or_insert_with(|| {
-                    Box::new(Chunk {
-                        t: [1.0; CHUNK * CHUNK],
-                        o: [0.0; CHUNK * CHUNK],
-                    })
-                });
-                let i = (py as usize % CHUNK) * CHUNK + px as usize % CHUNK;
-                ch.t[i] *= 1.0 - c * d.density;
-                if d.opacity > ch.o[i] {
-                    ch.o[i] = d.opacity;
-                }
-            }
-        }
+        dab_into(&mut self.chunks, self.bounds, s, d);
     }
 
     /// The stroke's unquantised alpha a = O·B at each touched pixel, in a fixed order.
@@ -392,6 +483,145 @@ impl StrokeBuffer {
             }
         }
         layer.tiles.prune();
+    }
+}
+
+/// A stroke being drawn: an always-current preview of the layer, updated incrementally.
+///
+/// Final dabs ([`place_dabs_live`]) go into a persistent stroke buffer once; the few tail dabs
+/// that may still move are drawn each update on a scratch copy of the chunks they touch. Only
+/// changed chunks are committed again. The preview equals [`stroke`] on the same samples
+/// (exactly, without stabilization; with stabilization the finished stroke also catches up to
+/// the release point). The finished stroke is still made by the `brush.stroke` command.
+pub struct LiveStroke {
+    s: BrushSettings,
+    bounds: (u32, u32),
+    samples: Vec<Sample>,
+    base: Layer,
+    preview: Layer,
+    buf: StrokeBuffer,
+    applied: usize,
+    tail_chunks: Vec<ChunkKey>,
+}
+
+impl LiveStroke {
+    pub fn new(base: Layer, bounds: (u32, u32), s: BrushSettings) -> Result<Self, BrushError> {
+        s.validate()?;
+        Ok(Self {
+            preview: base.clone(),
+            base,
+            bounds,
+            s,
+            samples: Vec::new(),
+            buf: StrokeBuffer::new(bounds),
+            applied: 0,
+            tail_chunks: Vec::new(),
+        })
+    }
+
+    pub fn settings(&self) -> &BrushSettings {
+        &self.s
+    }
+
+    pub fn samples(&self) -> &[Sample] {
+        &self.samples
+    }
+
+    /// The layer as it looks with the stroke so far.
+    pub fn preview(&self) -> &Layer {
+        &self.preview
+    }
+
+    /// Add samples; returns the 256² tiles whose preview pixels may have changed.
+    pub fn push(&mut self, samples: &[Sample]) -> Vec<(i32, i32)> {
+        self.samples.extend_from_slice(samples);
+        let (dabs, stable) = place_dabs_live(&self.s, &self.samples);
+        let mut dirty: Vec<ChunkKey> = std::mem::take(&mut self.tail_chunks);
+        let stable = stable.max(self.applied).min(dabs.len());
+        for d in &dabs[self.applied..stable] {
+            dirty.extend(dab_chunks(self.bounds, &self.s, d));
+            self.buf.dab(&self.s, d);
+        }
+        self.applied = stable;
+        // Tail: on copies of the chunks it touches.
+        let mut overlay: BTreeMap<ChunkKey, Box<Chunk>> = BTreeMap::new();
+        for d in &dabs[stable..] {
+            for key in dab_chunks(self.bounds, &self.s, d) {
+                if let std::collections::btree_map::Entry::Vacant(v) = overlay.entry(key)
+                    && let Some(c) = self.buf.chunks.get(&key)
+                {
+                    v.insert(c.clone());
+                }
+            }
+            dab_into(&mut overlay, self.bounds, &self.s, d);
+        }
+        self.tail_chunks = overlay.keys().copied().collect();
+        dirty.extend(self.tail_chunks.iter().copied());
+        dirty.sort_unstable();
+        dirty.dedup();
+        for &key in &dirty {
+            let chunk = overlay.get(&key).or_else(|| self.buf.chunks.get(&key));
+            recommit(
+                &mut self.preview,
+                &self.base,
+                &self.s,
+                self.bounds,
+                key,
+                chunk.map(|c| &**c),
+            );
+        }
+        self.preview.tiles.prune();
+        let ratio = (crate::tile::TILE_SIZE / CHUNK) as i32;
+        let mut tiles: Vec<(i32, i32)> = dirty.iter().map(|k| (k.0 / ratio, k.1 / ratio)).collect();
+        tiles.dedup();
+        tiles.sort_unstable();
+        tiles.dedup();
+        tiles
+    }
+}
+
+/// Recompute one chunk of a live stroke's preview from the base layer and the stroke state.
+fn recommit(
+    preview: &mut Layer,
+    base_layer: &Layer,
+    s: &BrushSettings,
+    bounds: (u32, u32),
+    key: ChunkKey,
+    chunk: Option<&Chunk>,
+) {
+    {
+        use crate::tile::TILE_SIZE;
+        let c = CHUNK as i64;
+        let (kx, ky) = (i64::from(key.0) * c, i64::from(key.1) * c);
+        let (w, h) = (i64::from(bounds.0), i64::from(bounds.1));
+        for iy in 0..CHUNK {
+            let y = ky + iy as i64;
+            if y >= h {
+                break;
+            }
+            for ix in 0..CHUNK {
+                let x = kx + ix as i64;
+                if x >= w {
+                    break;
+                }
+                let base = base_layer.pixel(x as u32, y as u32);
+                let a = chunk.map_or(0.0, |ch| {
+                    let i = iy * CHUNK + ix;
+                    ch.o[i] * (1.0 - ch.t[i])
+                });
+                let out = if a > 0.0 {
+                    ink::apply(s.ink, base, s.color, a, base_layer.lock_alpha)
+                } else {
+                    base
+                };
+                if preview.pixel(x as u32, y as u32) != out {
+                    let ts = TILE_SIZE as i64;
+                    let tile = preview.tiles.get_mut(((x / ts) as i32, (y / ts) as i32));
+                    let i = (((y % ts) * ts + x % ts) * 4) as usize;
+                    tile.px[i..i + 4].copy_from_slice(&out);
+                }
+            }
+        }
     }
 }
 

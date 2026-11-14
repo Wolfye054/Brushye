@@ -20,6 +20,16 @@ pub struct Pt {
 
 /// Moving mean over the last `s` events, plus the catch-up at release (B-007).
 pub fn stabilize(pts: &[Pt], s: u8) -> Vec<Pt> {
+    stabilize_with(pts, s, true)
+}
+
+/// [`stabilize`] while the pen is still down: no catch-up yet. Each output point depends only
+/// on the events up to it, so a live stroke's prefix never changes.
+pub fn stabilize_live(pts: &[Pt], s: u8) -> Vec<Pt> {
+    stabilize_with(pts, s, false)
+}
+
+fn stabilize_with(pts: &[Pt], s: u8, catch_up: bool) -> Vec<Pt> {
     if s == 0 || pts.len() < 2 {
         return pts.to_vec();
     }
@@ -28,7 +38,9 @@ pub fn stabilize(pts: &[Pt], s: u8) -> Vec<Pt> {
         return Vec::new();
     };
     let mut ext: Vec<Pt> = pts.to_vec();
-    ext.extend(std::iter::repeat_n(last, n - 1));
+    if catch_up {
+        ext.extend(std::iter::repeat_n(last, n - 1));
+    }
     let mut out = Vec::with_capacity(ext.len());
     for i in 0..ext.len() {
         let w = &ext[i.saturating_sub(n - 1)..=i];
@@ -102,6 +114,27 @@ pub fn spline(c: &[Pt]) -> Vec<Pt> {
     }
     out.push(c[n - 1]);
     dedup(out)
+}
+
+/// Arc length of the part of `spline(c)` that can't change when more control points are
+/// appended, or a later event at the same position updates the last pressure: everything up
+/// to the midpoint m₍ₙ₋₂₎ of the last-but-one segment. `None` while nothing is final yet.
+///
+/// The prefix is computed from the same points in the same order as the full spline, so its
+/// length compares exactly with the full polyline's arc lengths.
+pub fn final_length(c: &[Pt]) -> Option<f64> {
+    let n = c.len();
+    if n < 3 {
+        return None;
+    }
+    // spline(c[..n-1]) ends with the straight piece m₍ₙ₋₂₎ → c₍ₙ₋₂₎; drop it.
+    let prefix = spline(&c[..n - 1]);
+    let k = prefix.len();
+    if k < 2 {
+        return None;
+    }
+    let line = Polyline::new(prefix[..k - 1].to_vec());
+    Some(line.len())
 }
 
 /// A polyline with cumulative arc length, for placing dabs by distance.

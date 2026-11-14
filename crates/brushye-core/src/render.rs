@@ -30,13 +30,27 @@ impl Image {
 /// bottom layer's stored alpha, while compositing onto transparent pixels follows L-005's
 /// lossy 15-bit rule. Observed at 100 % opacity in Normal mode; other cases are open (L-005).
 pub fn flatten(doc: &Document) -> Image {
-    let (w, h) = (doc.width as usize, doc.height as usize);
-    let mut px = vec![0u8; w * h * 4];
+    flatten_rect(doc, 0, 0, doc.width, doc.height)
+}
+
+/// Flatten only the canvas rectangle at (`x0`, `y0`) of size `w`×`h` (clipped to the canvas),
+/// with exactly the same per-pixel arithmetic as [`flatten`]. The result is `w`×`h`; pixels
+/// outside the canvas stay transparent. Used for incremental display (D-012 4).
+pub fn flatten_rect(doc: &Document, x0: u32, y0: u32, w: u32, h: u32) -> Image {
+    let (cw, ch) = (i64::from(doc.width), i64::from(doc.height));
+    let (rx0, ry0) = (i64::from(x0), i64::from(y0));
+    let (rx1, ry1) = ((rx0 + i64::from(w)).min(cw), (ry0 + i64::from(h)).min(ch));
+    let stride = w as usize;
+    let mut px = vec![0u8; stride * h as usize * 4];
     if let Some(p) = doc.paper {
-        for c in px.as_chunks_mut::<4>().0 {
-            c.copy_from_slice(&p.0);
+        for y in ry0..ry1 {
+            for x in rx0..rx1 {
+                let d = ((y - ry0) as usize * stride + (x - rx0) as usize) * 4;
+                px[d..d + 4].copy_from_slice(&p.0);
+            }
         }
     }
+    let ts = TILE_SIZE as i64;
     let mut first = doc.paper.is_none();
     for layer in doc.layers() {
         if !layer.visible {
@@ -44,26 +58,23 @@ pub fn flatten(doc: &Document) -> Image {
         }
         let copy = std::mem::replace(&mut first, false);
         for (&(tx, ty), tile) in layer.tiles.iter() {
-            let (x0, y0) = (
-                i64::from(tx) * TILE_SIZE as i64,
-                i64::from(ty) * TILE_SIZE as i64,
-            );
-            for iy in 0..TILE_SIZE {
-                let y = y0 + iy as i64;
-                if y < 0 || y >= h as i64 {
-                    continue;
-                }
-                for ix in 0..TILE_SIZE {
-                    let x = x0 + ix as i64;
-                    if x < 0 || x >= w as i64 {
-                        continue;
-                    }
+            let (tx0, ty0) = (i64::from(tx) * ts, i64::from(ty) * ts);
+            // Intersection of the tile, the canvas and the rectangle.
+            let (xa, xb) = (tx0.max(rx0), (tx0 + ts).min(rx1));
+            let (ya, yb) = (ty0.max(ry0), (ty0 + ts).min(ry1));
+            if xa >= xb || ya >= yb {
+                continue;
+            }
+            for y in ya..yb {
+                let iy = (y - ty0) as usize;
+                for x in xa..xb {
+                    let ix = (x - tx0) as usize;
                     let s = &tile.px[(iy * TILE_SIZE + ix) * 4..][..4];
                     if s[3] == 0 {
                         continue;
                     }
                     let at = effective_alpha(s[3], layer.opacity);
-                    let d = (y as usize * w + x as usize) * 4;
+                    let d = ((y - ry0) as usize * stride + (x - rx0) as usize) * 4;
                     if copy {
                         px[d..d + 4].copy_from_slice(&[s[0], s[1], s[2], at]);
                         continue;
@@ -76,8 +87,8 @@ pub fn flatten(doc: &Document) -> Image {
         }
     }
     Image {
-        width: doc.width,
-        height: doc.height,
+        width: w,
+        height: h,
         px,
     }
 }
