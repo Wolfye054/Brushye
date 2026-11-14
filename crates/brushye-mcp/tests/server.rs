@@ -261,7 +261,7 @@ fn example_scripts_run() {
     let mut n = 0;
     for e in std::fs::read_dir(&dir).unwrap_or_else(|e| unreachable!("{e}")) {
         let p = e.unwrap_or_else(|e| unreachable!("{e}")).path();
-        if p.extension().is_some_and(|x| x == "brushye") {
+        if p.extension().is_some_and(|x| x == "bcmd") {
             let script = std::fs::read_to_string(&p).unwrap_or_default();
             let mut s = Server::new();
             if let Err(e) = call(&mut s, "run", json!({ "script": script })) {

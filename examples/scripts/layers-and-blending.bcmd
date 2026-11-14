@@ -1,5 +1,5 @@
 # Layers, fills and blending modes.
-# Run: brushye run examples/scripts/layers-and-blending.brushye --png out.png
+# Run: brushye run examples/scripts/layers-and-blending.bcmd --png out.png
 doc.new 400 300 dpi=350
 layer.new L1 name="Base"
 layer.fill L1 color=#3a6ea5

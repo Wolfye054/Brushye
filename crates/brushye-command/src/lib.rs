@@ -8,6 +8,7 @@
 pub mod brush_preset;
 pub mod commands;
 pub mod exec;
+pub mod journal;
 pub mod params;
 pub mod syntax;
 pub mod tools;

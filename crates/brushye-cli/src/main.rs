@@ -6,6 +6,7 @@
 //! brushye replay JOURNAL [--base FILE.brsh] [--query Q]...
 //! brushye render JOURNAL|FILE.brsh OUT.png
 //! brushye dump FILE.brsh [--layers DIR]
+//! brushye journal show JOURNAL|FILE.brsh [--json]
 //! brushye brush new OUT.brshbrush NAME [key=value ...]
 //! brushye brush show FILE.brshbrush
 //! brushye brush list DIR
@@ -40,6 +41,9 @@ const USAGE: &str = "usage:
                                           export the flattened image as PNG
   brushye dump FILE.brsh [--layers DIR]   show a document's manifest, layers and tiles;
                                           --layers writes each layer as DIR/<id>.png
+  brushye journal show JOURNAL|FILE.brsh [--json]
+                                          list a journal's commands (or a document's embedded
+                                          journal): strokes summarised, undone steps marked
   brushye brush new OUT.brshbrush NAME [key=value ...]
                                           save a user brush (brush.stroke settings)
   brushye brush show FILE.brshbrush       print a brush and its brush.stroke settings
@@ -438,6 +442,54 @@ fn cmd_brush(args: &[String]) -> Result<(), Fail> {
     }
 }
 
+fn cmd_journal(args: &[String]) -> Result<(), Fail> {
+    if args.first().map(String::as_str) != Some("show") {
+        return Err(Fail::Usage(format!("journal needs 'show'\n{USAGE}")));
+    }
+    let a = Args::parse(&args[1..], &[], &["--json"])?;
+    a.exactly(1, "journal show needs exactly one JOURNAL or FILE.brsh")?;
+    let path = &a.pos[0];
+    let text = if path.ends_with(".brsh") {
+        open_brsh(path)?
+            .journal
+            .ok_or_else(|| Fail::Run(format!("{path}: no embedded journal")))?
+    } else {
+        read_input(path).map_err(Fail::Run)?
+    };
+    let v = brushye_command::journal::view(&text);
+    if a.has("--json") {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&v.to_json()).unwrap_or_default()
+        );
+    } else {
+        if let Some(h) = &v.header {
+            println!("{h}");
+        }
+        for e in &v.entries {
+            let mark = if e.undone { "  (undone)" } else { "" };
+            println!("{:>5}  {}{mark}", e.line, e.text);
+        }
+        let undone = v.entries.iter().filter(|e| e.undone).count();
+        let strokes = v.entries.iter().filter(|e| e.stroke.is_some()).count();
+        println!(
+            "-- {} commands, {strokes} strokes, {undone} undone at the end",
+            v.entries.len()
+        );
+    }
+    for (line, msg) in &v.errors {
+        eprintln!("{path}:{line}: {msg}");
+    }
+    if v.errors.is_empty() {
+        Ok(())
+    } else {
+        Err(Fail::Run(format!(
+            "{path}: {} unreadable lines",
+            v.errors.len()
+        )))
+    }
+}
+
 fn real_main(args: &[String]) -> Result<(), Fail> {
     let rest = args.get(1..).unwrap_or(&[]);
     match args.first().map(String::as_str) {
@@ -469,6 +521,7 @@ fn real_main(args: &[String]) -> Result<(), Fail> {
         Some("render") => cmd_render(rest),
         Some("dump") => cmd_dump(rest),
         Some("brush") => cmd_brush(rest),
+        Some("journal") => cmd_journal(rest),
         Some(other) => Err(Fail::Usage(format!(
             "unknown subcommand '{other}'\n{USAGE}"
         ))),

@@ -270,3 +270,29 @@ fn command_reference_is_current() {
         assert!(out.contains(&format!("`{name}`")), "{name}");
     }
 }
+
+#[test]
+fn journal_show_lists_commands() {
+    let dir = tmpdir("journal-show");
+    let j = p(&dir, "j.bcmd");
+    let script = "doc.new 32 32\nlayer.new L2\nbrush.stroke L2 color=#000000 size=3 samples=[2,2,1,0;30,30,1,250000]\nlayer.new L3\nhistory.undo\n";
+    let (code, _, err) = brushye(&["run", "-", "--journal", &j], Some(script));
+    assert_eq!(code, 0, "{err}");
+    let (code, out, err) = brushye(&["journal", "show", &j], None);
+    assert_eq!(code, 0, "{err}");
+    assert!(
+        out.contains("<2 samples, 0.25 s, (2,2)–(30,30), pressure 1.00–1.00>"),
+        "{out}"
+    );
+    assert!(out.contains("@4 layer.new L3  (undone)"), "{out}");
+    assert!(
+        out.ends_with("-- 5 commands, 1 strokes, 1 undone at the end\n"),
+        "{out}"
+    );
+    let (code, out, _) = brushye(&["journal", "show", &j, "--json"], None);
+    assert_eq!(code, 0);
+    assert!(out.contains("\"undone\": true"));
+    let (code, _, _) = brushye(&["journal", "list"], None);
+    assert_eq!(code, 2);
+    let _ = std::fs::remove_dir_all(&dir);
+}

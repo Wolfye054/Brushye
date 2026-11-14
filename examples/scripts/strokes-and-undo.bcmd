@@ -1,5 +1,5 @@
 # Brush strokes with readable samples [x,y,pressure,t_µs;…], then undo and redo.
-# Run: brushye run examples/scripts/strokes-and-undo.brushye --png out.png --journal out.journal
+# Run: brushye run examples/scripts/strokes-and-undo.bcmd --png out.png --journal out.journal
 doc.new 400 300
 layer.new L2 name="Ink"
 # A hard round pen line whose size follows pressure (minimum 20 %).
