@@ -1,5 +1,5 @@
 # L-006 Clip to layer below; lock transparent pixels
-- Status: **observed** (clipping exact for Normal/Multiply; lock: alpha exact, AA edge rule open)
+- Status: **observed** (clipping exact for Normal/Multiply; run 2 2026-11-14: semi-transparent clipped layer, Multiply base, folder bases; lock: alpha exact, AA edge rule open)
 - CSP version: 1.13.2 (PRO, 64-bit, build 202301210208)
 - Needs: automated-Wine OK
 - Date / method / observer: 2026-11-13 / automated-Wine (Xvfb :77) / Claude (background run)
@@ -25,7 +25,35 @@ Data: `data/observed2/clip_00_normal.png`, `clip_02_multiply.png`, `lock_mid_str
    transparent ones). Inside the strokes the colour is replaced by the brush colour exactly, at
    every alpha. 15 227 pixels changed colour.
 
+## Run 2 (2026-11-14): semi-transparent clipped layer, clip base modes, folders
+Method: automated-Wine (Xvfb :77). Data: `data/observed3/clip_*.png`. Checks:
+`tools/observe/l006b_check.py`.
+
+Setup:
+1. base.png, then `top_alpha Copy` (clip base, top_alpha.png), then `top Copy` (top.png) with
+   Clip to Layer Below.
+2. Model (L-006 run 1): the clipped layers composite onto the clip base's colour, treated as
+   opaque. The group keeps the base's alpha, then composites onto the backdrop with the base's
+   blend mode and opacity.
+
+Results, 131 072 px each:
+- `clip_normal`: **exact** (the run 1 result again).
+- `clip_clipped_op50`: the clipped layer at 50 % opacity. **Exact**: it composites onto the
+  base colour at its own effective alpha (L-003).
+- `clip_base_multiply`: the clip base in Multiply. CSP's output is **identical** to its own
+  plain Multiply layer with the base's alpha (L-002 `alpha_02_multiply`, 0 px differ).
+  - So the group model holds.
+  - Brushye's prediction is ±2 on the partial-alpha pixels only, which is L-002's open
+    Multiply rule (the same 79 841 px).
+- `clip_onto_folder_normal`: a Normal folder as clip base works like a layer: the folder's
+  composited result is the base. **Exact**, identical to `clip_normal`.
+- `clip_onto_folder_through`: with a **Through** folder as clip base, the clipped layer is
+  **not clipped at all**. The output equals the unclipped stack exactly.
+  - The Layer palette shows the clip bar **grey instead of red** (U-014).
+  - This corrects the manual note "treated as Normal" (docs/research).
+
 ## Open questions
 - Lock transparent pixels: the colour rule at the anti-aliased stroke edge (expected lerp by
   coverage; not verified because the coverage isn't known independently).
-- Clipping with a semi-transparent clipped layer, and with the clip base in other modes.
+- Several clipped layers on one base, and clip bases in modes other than Normal/Multiply
+  (expected to follow the group model).

@@ -66,6 +66,10 @@
     mask.
 - **Children** are indented by about **16 px per level** under their folder. Nested folders
   indent again.
+- **Clipped layer whose base is a Through folder:** the bar is **grey**, and the layer isn't
+  clipped (L-006 run 2).
+- **After Ungroup:** the former children stay **all selected**. The first is the edit target,
+  and the others show a check mark in the edit column.
 - **Clipped layer:** a **red vertical bar** (about 4 px wide) at the left of the thumbnail column,
   with the thumbnail shifted right by the bar's width. While the clipped layer is selected,
   the Clip to Layer Below button in toolbar row 1 is shown pressed.

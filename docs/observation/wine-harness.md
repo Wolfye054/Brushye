@@ -98,6 +98,19 @@ Rules learned the hard way:
 - Pressure-spec helpers: `pen_grid.py` (21 constant-pressure strokes), `csp_export_png.sh`
   (export, pressing OK only if the dialog is really open), `analyze_pen_grid.py` (width),
   `analyze_pen_grid_alpha.py` (centre-line alpha).
+- **Submenus (2026-11-14):** hover the parent item, move *horizontally* into the submenu,
+  then down, and click at the submenu's own x. Layer > Layer Mask ▸ and Layer Settings ▸ items
+  are at x ≈ 540. A click at the parent menu's x lands on the parent item at that height (once
+  Convert Layer…).
+- After a menu click is lost, input can stay stuck. Opening and closing any menu brings it
+  back. When an Open dialog didn't appear, the typed path went to the main window as tool
+  shortcuts (it switched to Gradient, Select All). Screenshot-check before typing.
+- Clicking in the History tab jumps the document to that state. Switch back to the Layer tab
+  before clicking layer rows.
+- `csp_export_png.sh` checks the dialog with `python3 -I` plus PIL. Run it with a venv that
+  has Pillow first on `PATH`, and `XDRIVE` set to the venv's xdrive wrapper.
+- XTEST eraser and pen drags replay **bit-identically** across layers and documents (L-008
+  run 2). The same drag script gives the same mask on two layers.
 - Screenshot-check after each export. A click meant for a dialog that didn't open lands on the
   canvas and paints a dot.
 

@@ -1,6 +1,5 @@
 # L-008 Layer masks: values, alpha, opacity
-- Status: **observed** (raster-layer masks: exact). Folder masks and masks with clipping:
-  run 3, below or open.
+- Status: **observed** (raster-layer masks: exact; folder masks: see L-004 run 2)
 - CSP version: 1.13.2 (PRO, 64-bit, build 202301210208)
 - Needs: automated-Wine OK
 - Date / method / observer: 2026-11-14 / automated-Wine (Xvfb :77, XTEST mouse drags) / Claude
@@ -65,8 +64,10 @@
   orders. Only opacity-then-mask with a floor is exact.
 
 ## Open questions
-- Masks on folders (Normal and Through), and a masked layer as a clip base or clipped layer
-  (run 3).
+- Masks on folders: observed in L-004 run 2. A Normal folder follows this spec's alpha rule;
+  a Through folder lerps the backdrop with weight `floor(M·32768/255)`.
+- A masked layer as a clip base or as a clipped layer: expected to follow the alpha rule above
+  (not run).
 - Mask expression > Show gradients other than Yes (threshold masks).
 - Painting a mask with partially transparent ink or lower brush opacity: expected to follow
   the brush's alpha output. Not run.

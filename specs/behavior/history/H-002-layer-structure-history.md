@@ -29,13 +29,16 @@ Each action below adds **one** History entry, with the label shown, unless marke
 
 - Unlike layer visibility (H-001: not a History step), **Show Mask Area, Enable Mask and Link
   are History steps**.
-- Repeated toggles were not merged in these runs: off and on gave two entries. They were
-  separated by menu use. Whether back-to-back toggles merge, as H-001's same-kind merging
-  would suggest, is open.
+- **Same-kind changes in a row merge** (H-001):
+  - Enable Mask off then on, with nothing in between, gave **one** "Switch enabling mask"
+    entry (L-008 run 1).
+  - Blend Multiply then Normal gave one "Change layer blending mode".
+  - Opacity 50 then 100 gave one "Change layer opacity".
+  - With other actions in between (Show Mask Area, Link), each toggle is its own entry.
 - Clicking an entry in the History palette moves to that state. A new action then discards the
   later entries (linear history, H-001). This was observed by accident during the run.
 
 ## Open questions
-- Do consecutive clip, mask enable or Show Mask Area toggles merge into one step (H-001 rule)?
+- Consecutive clip or Show Mask Area toggles: expected to merge like mask enable (not run).
 - New Layer Folder (the menu item), Delete Mask, and layer moves into or out of folders by drag:
   their labels.
