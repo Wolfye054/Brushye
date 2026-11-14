@@ -65,9 +65,21 @@ def windows():
             for c in w.query_tree().children: walk(c, depth + 1)
     walk(root)
 
+def focus(name):
+    """Give keyboard focus to the first viewable top-level window whose name contains NAME
+    (needed on a display without a window manager, where nothing focuses windows)."""
+    for w in root.query_tree().children:
+        try:
+            if name in (w.get_wm_name() or "") and w.get_attributes().map_state == X.IsViewable:
+                w.set_input_focus(X.RevertToParent, X.CurrentTime); sync(); return
+        except Exception:
+            pass
+    raise SystemExit(f"no window named {name!r}")
+
 def run(args):
     c, a = args[0], args[1:]
-    if c == "move": move(*a)
+    if c == "focus": focus(" ".join(a))
+    elif c == "move": move(*a)
     elif c == "click":
         move(a[0], a[1]); time.sleep(0.05); b = a[2] if len(a) > 2 else 1
         btn(b, True); time.sleep(0.05); btn(b, False)

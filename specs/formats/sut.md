@@ -1,6 +1,9 @@
 # .sut (CSP 1.13.2 sub tool export)
 
 - Status: **draft**: container and the alpha brush settings mapped; open items below.
+  The importer (`crates/brushye-sut`) implements the mapping below. It reports everything else as
+  "approximated" or "not imported". Available as `brushye brush import-sut` and as the app's
+  Import sub tool (`.sut` files).
 - Samples: `specs/formats/samples.md` (S-01..S-62, automated-Wine, D-020).
 - Method: black-box differential analysis with `tools/format-study/` (`dump.py`,
   `sut_sweep.py`). Each sample is diffed against S-01; a finding cites the samples that show it.

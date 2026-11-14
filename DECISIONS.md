@@ -443,6 +443,7 @@ crates/
 | `windows` | Windows Ink / WinTab backend (D-015) | Microsoft's official Win32 bindings |
 | `objc2`, `objc2-app-kit` | macOS tablet backend (D-015) | Maintained, type-safe AppKit bindings |
 | `rmcp` | MCP server (M9) | Official Rust MCP SDK |
+| `rusqlite` (feature `bundled`) | reading `.sut` (and later `.clip`) files, which are SQLite databases (M8, `specs/formats/sut.md`) | Approved by the maintainer 2026-11-13. Compiles the official SQLite C library (public domain) into Brushye, so no system library is needed. The second C dependency after zstd. Files are opened read-only and immutable with SQLite's defensive settings, and only SELECT is run. 0.42 needs Rust 1.89, so the workspace MSRV moved from 1.88 to 1.89 |
 | `insta` (dev) | golden tests for codecs and migrations | Snapshot review workflow |
 | `proptest` (dev) | property tests; print → parse round-trip fuzzing of the command codec (D-011) | Standard property-testing crate |
 

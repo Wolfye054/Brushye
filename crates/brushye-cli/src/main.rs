@@ -9,6 +9,7 @@
 //! brushye brush new OUT.brshbrush NAME [key=value ...]
 //! brushye brush show FILE.brshbrush
 //! brushye brush list DIR
+//! brushye brush import-sut FILE.sut [OUT_DIR]
 //! brushye commands
 //! brushye --version
 //! ```
@@ -43,6 +44,10 @@ const USAGE: &str = "usage:
                                           save a user brush (brush.stroke settings)
   brushye brush show FILE.brshbrush       print a brush and its brush.stroke settings
   brushye brush list DIR                  list a brush library folder
+  brushye brush import-sut FILE.sut [OUT_DIR]
+                                          import a Clip Studio Paint sub tool: print its
+                                          settings and what couldn't be imported; with OUT_DIR,
+                                          save each sub tool as OUT_DIR/<name>.brshbrush
   brushye commands [--markdown]           print the command/query registry (JSON, or the
                                           Markdown reference in docs/commands.md)
   brushye --version";
@@ -383,7 +388,53 @@ fn cmd_brush(args: &[String]) -> Result<(), Fail> {
             }
             Ok(())
         }
-        _ => Err(usage("brush needs new, show or list")),
+        Some("import-sut") => {
+            let (Some(path), out_dir) = (args.get(1), args.get(2)) else {
+                return Err(usage("brush import-sut needs FILE.sut"));
+            };
+            if args.len() > 3 {
+                return Err(usage(
+                    "brush import-sut takes FILE.sut and an optional OUT_DIR",
+                ));
+            }
+            let bytes = std::fs::read(path).map_err(|e| Fail::Run(format!("{path}: {e}")))?;
+            let subs =
+                brushye_sut::import(&bytes).map_err(|e| Fail::Run(format!("{path}: {e}")))?;
+            for sub in subs {
+                let mut file = None;
+                if let Some(dir) = out_dir {
+                    let safe: String = sub
+                        .name
+                        .chars()
+                        .map(|c| {
+                            if c.is_alphanumeric() || " -_.".contains(c) {
+                                c
+                            } else {
+                                '_'
+                            }
+                        })
+                        .collect();
+                    let out = Path::new(dir).join(format!("{}.brshbrush", safe.trim()));
+                    let b = brush_file::BrushFile {
+                        name: sub.name.clone(),
+                        settings: sub.preset.to_json(),
+                        images: Default::default(),
+                    };
+                    let bytes = brush_file::save(&b).map_err(|e| Fail::Run(e.to_string()))?;
+                    brsh::write_atomic(&out, &bytes)
+                        .map_err(|e| Fail::Run(format!("{}: {e}", out.display())))?;
+                    file = Some(out.display().to_string());
+                }
+                print_json(&json!({
+                    "name": sub.name,
+                    "stroke_args": sub.preset.to_text(),
+                    "notes": sub.notes.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                    "file": file,
+                }));
+            }
+            Ok(())
+        }
+        _ => Err(usage("brush needs new, show, list or import-sut")),
     }
 }
 

@@ -1,0 +1,16 @@
+[package]
+name = "brushye-sut"
+description = "Import of Clip Studio Paint sub tool files (.sut) the user supplies at runtime (M8, specs/formats/sut.md)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+brushye-command = { path = "../brushye-command" }
+# .sut files are SQLite databases (D-016, approved 2026-11-13). `bundled` compiles SQLite in.
+rusqlite = { version = "0.42", default-features = false, features = ["bundled", "serialize"] }

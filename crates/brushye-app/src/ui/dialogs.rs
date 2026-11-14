@@ -55,9 +55,13 @@ pub struct PendingFile {
 
 /// A native dialog starting at `path` (its folder and file name), filtered to one extension.
 fn file_dialog(path: &str, filter: &str, ext: &str, title: &str) -> rfd::AsyncFileDialog {
+    file_dialog_exts(path, filter, &[ext], title)
+}
+
+fn file_dialog_exts(path: &str, filter: &str, exts: &[&str], title: &str) -> rfd::AsyncFileDialog {
     let p = std::path::Path::new(path.trim());
     let mut d = rfd::AsyncFileDialog::new()
-        .add_filter(filter, &[ext])
+        .add_filter(filter, exts)
         .set_title(title);
     if let Some(dir) = p.parent().filter(|d| d.is_dir()) {
         d = d.set_directory(dir);
@@ -182,7 +186,12 @@ pub fn native(app: &mut App, frame: &eframe::Frame, ctx: &egui::Context) {
         FileJob::SaveAs => file_dialog(&path, "Brushye file", "brsh", "Save as"),
         FileJob::SaveDuplicate => file_dialog(&path, "Brushye file", "brsh", "Save duplicate"),
         FileJob::ExportPng => file_dialog(&path, "PNG image", "png", "Export (.png)"),
-        FileJob::ImportBrush => file_dialog(&path, "Brushye brush", "brshbrush", "Import sub tool"),
+        FileJob::ImportBrush => file_dialog_exts(
+            &path,
+            "Brushes (Brushye, Clip Studio Paint)",
+            &["brshbrush", "sut"],
+            "Import sub tool",
+        ),
         FileJob::ExportBrush => file_dialog(&path, "Brushye brush", "brshbrush", "Export sub tool"),
     }
     .set_parent(frame);
@@ -209,7 +218,45 @@ pub fn native(app: &mut App, frame: &eframe::Frame, ctx: &egui::Context) {
     }
 }
 
+/// What a .sut import couldn't bring over exactly (M8).
+fn sut_report(app: &mut App, ctx: &egui::Context) {
+    let Some(report) = &app.ui.sut_report else {
+        return;
+    };
+    let mut open = true;
+    let mut ok = false;
+    egui::Window::new("Import sub tool")
+        .collapsible(false)
+        .resizable(true)
+        .default_width(520.0)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .open(&mut open)
+        .show(ctx, |ui| {
+            egui::ScrollArea::vertical()
+                .max_height(360.0)
+                .show(ui, |ui| {
+                    for (name, notes) in report {
+                        ui.strong(format!("“{name}” was added."));
+                        if notes.is_empty() {
+                            ui.label("Every setting was imported.");
+                        }
+                        for n in notes {
+                            ui.label(format!("• {n}"));
+                        }
+                        ui.add_space(6.0);
+                    }
+                });
+            if ui.button("OK").clicked() {
+                ok = true;
+            }
+        });
+    if !open || ok {
+        app.ui.sut_report = None;
+    }
+}
+
 pub fn dialogs(app: &mut App, ctx: &egui::Context) {
+    sut_report(app, ctx);
     preferences(app, ctx);
     about(app, ctx);
     import_brush(app, ctx);
@@ -403,7 +450,7 @@ fn import_brush(app: &mut App, ctx: &egui::Context) {
         .resizable(false)
         .open(&mut open)
         .show(ctx, |ui| {
-            ui.label("Brush file (.brshbrush)");
+            ui.label("Brush file (.brshbrush, or a Clip Studio Paint .sut)");
             ui.add(egui::TextEdit::singleline(&mut path).desired_width(360.0));
             if ui.button("Import").clicked() {
                 app.import_sub_tool(&path);

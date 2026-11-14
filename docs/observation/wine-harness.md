@@ -41,7 +41,8 @@ Stop: `WINEPREFIX=~/.wine-csp-observe wineserver -k; pkill -f 'Xvfb :77'`.
 
 ## Driver
 `tools/observe/xdrive.py` commands, chained with `';;'`:
-`move X Y`, `click X Y [btn]`, `dclick`, `down/up X Y`, `drag X1 Y1 X2 Y2 [steps] [ms]`,
+`focus NAME` (give keyboard focus to a window; needed on a display without a window manager
+before typing), `move X Y`, `click X Y [btn]`, `dclick`, `down/up X Y`, `drag X1 Y1 X2 Y2 [steps] [ms]`,
 `key ctrl+o`, `type TEXT`, `sleep S`, `shot FILE.png` (screenshot via ImageMagick `import`),
 `windows`. It needs `python-xlib` (installed in a scratch venv, not system-wide).
 

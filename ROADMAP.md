@@ -82,6 +82,9 @@ See docs/reports/M7-brush-editor.md.**
   format ✓, .brsh + PNG export ✓, everything headless ✓.
 
 ## M8 — .sut import (first post-alpha milestone)
+**Status (2026-11-13): in progress.** 56 samples studied (`specs/formats/sut.md`). The importer is in
+the CLI and app. Next: a second sample batch (hardness levels, ink modes, …), then the behaviour
+cross-check.
 - Format study from maintainer-made samples (`specs/formats/study-plan.md`).
 - Map .sut settings to Brushye brush settings; report anything that can't be mapped.
 - Import only at runtime from user-supplied files; nothing bundled.

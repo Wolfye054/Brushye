@@ -17,4 +17,5 @@ workspace = true
 [dependencies]
 brushye-command = { path = "../brushye-command" }
 brushye-format = { path = "../brushye-format" }
+brushye-sut = { path = "../brushye-sut" }
 serde_json = "1"

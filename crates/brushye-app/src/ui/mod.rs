@@ -162,6 +162,8 @@ pub struct UiState {
     pub dynamics_anchor: egui::Pos2,
     pub pending_subtool_op: Option<left::SubToolOp>,
     pub import_brush: Option<String>,
+    /// After a .sut import: each sub tool's name and what was approximated or left out.
+    pub sut_report: Option<Vec<(String, Vec<String>)>>,
     pub eyedropper_layer: bool,
     pub nav_tab: usize,
     pub layer_prop_tab: usize,
@@ -206,6 +208,7 @@ impl UiState {
             dynamics_anchor: egui::Pos2::ZERO,
             pending_subtool_op: None,
             import_brush: None,
+            sut_report: None,
             eyedropper_layer: false,
             nav_tab: 0,
             layer_prop_tab: 0,

@@ -653,6 +653,13 @@ impl App {
     }
 
     pub(crate) fn import_sub_tool(&mut self, path: &str) {
+        if std::path::Path::new(path)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("sut"))
+        {
+            self.import_sut(path);
+            return;
+        }
         let result = std::fs::read(path)
             .map_err(|e| e.to_string())
             .and_then(|b| brushye_format::brush_file::load(&b, false).map_err(|e| e.to_string()))
@@ -672,6 +679,44 @@ impl App {
                 }
             }
             Err(e) => self.status = e,
+        }
+    }
+
+    /// Import a Clip Studio Paint sub tool file (M8): each sub tool becomes a sub tool of the
+    /// current tool through `subtool.add`; what couldn't be imported is shown in a report.
+    fn import_sut(&mut self, path: &str) {
+        let tool = self.ui.tools.tool;
+        if !tool.is_brush() {
+            self.status = "Choose a brush tool first".into();
+            return;
+        }
+        let subs = match std::fs::read(path)
+            .map_err(|e| e.to_string())
+            .and_then(|b| brushye_sut::import(&b).map_err(|e| e.to_string()))
+        {
+            Ok(s) => s,
+            Err(e) => {
+                self.status = format!("{path}: {e}");
+                return;
+            }
+        };
+        let mut report = Vec::new();
+        for sub in subs {
+            let cmd = crate::ui::tool_cmds::add(tool, &sub.name, Some(sub.preset.to_text()));
+            if self.exec(cmd) {
+                report.push((
+                    sub.name,
+                    sub.notes.iter().map(ToString::to_string).collect(),
+                ));
+            }
+        }
+        self.sync_tools();
+        self.status = format!("Imported {} sub tool(s) from {path}", report.len());
+        if report
+            .iter()
+            .any(|(_, n): &(String, Vec<String>)| !n.is_empty())
+        {
+            self.ui.sut_report = Some(report);
         }
     }
 
