@@ -74,3 +74,45 @@ Open: the wizard (fitting a curve to strokes the user draws) and its Stronger/Li
 not implemented, because the fitting rule is unknown (open questions above). Also open: the
 curve type of wizard curves (the B-spline that the editor's curves use, B-004, doesn't reach 1.0
 at the wizard's 0.5 point).
+
+## Follow-up 2026-11-13 (M7 run): the wizard's fitting rule
+Method: automated-Wine + virtual stylus, observer Claude.
+- File > Pen Pressure Settings(J)… was opened on a throwaway 600 × 400 canvas, with "Show pen
+  pressure graph" on.
+- Three wizard strokes were drawn at screen y 600 / 650 / 700, x 660 → 1000, 121 events 8 ms
+  apart, using `tools/observe/b006_wizard.py PROFILE PEAK`. vpen p = 0.0099 + 0.9901·P.
+- After "Check adjusted settings", the proposed curve's control points were read from the
+  graph screenshot with `tools/observe/b006_graph_points.py` (marker clusters; graph 0 % at
+  screen (1084, 501), 100 % at (1286, 325) on that page; ±0.005).
+- Between runs the dialog was cancelled, which left the curve unchanged, and reopened.
+- Graph screenshots are in `obs-out/m7/w*.png`, not committed.
+
+| Strokes | Interior control points (input, output) |
+|---|---|
+| half-sine, peak 0.3 | (0.053, 0.047) (0.145, 0.314) (0.249, 0.764) (0.299, 1.000) |
+| half-sine, peak 0.5 (first run above) | (0.08, 0.02) (0.24, 0.30) (0.41, 0.76) (0.50, 1.00) |
+| half-sine, peak 0.7 | (0.123, 0.053) (0.351, 0.314) (0.580, 0.764) (0.694, 1.000) |
+| half-sine, peak 0.7, repeated | identical to the line above |
+| half-sine, peak 1.0 | (0.192, 0.062) (0.495, 0.309) (0.828, 0.765), last point at (1, 1) |
+| plateau at 0.5 (15 % ramps) | (0.082, 0.003) (0.253, 0.022) (0.416, 0.475) (0.497, 1.000) |
+
+Findings:
+1. **The wizard is deterministic**: the same strokes give the same curve.
+2. **Always four interior points plus the fixed ends.**
+3. **Inputs scale with the maximum pressure drawn, P_max:** the points sit at about
+   **1/6, 1/2 and 5/6 of P_max, plus P_max itself** (ratios 0.16–0.19, 0.48–0.51, 0.82–0.83,
+   0.99–1.0). Output reaches 100 % at P_max and stays there.
+4. **The outputs depend on the pressure distribution, not on P_max:**
+   - half-sine strokes give about **0.05, 0.31, 0.76** at every peak;
+   - the plateau (mostly at P_max) gives **0.003, 0.022, 0.475**, so the curve stays low until
+     near P_max.
+
+   Simple percentile models don't fit:
+   - the fraction of samples at or below the point: sine 0.11 / 0.33 / 0.63;
+   - its complement: 0.89 / 0.67 / 0.37.
+
+   **Open:** the rule mapping the pressure distribution to the outputs. Next: strokes with a
+   known two-level distribution, and varying the event count, to see whether samples are
+   weighted by time or by distance.
+5. Afterwards the global curve was reset (Reset to default → Check adjusted settings → Done).
+   Reopening the dialog showed the identity curve (2 points).
