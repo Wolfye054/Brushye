@@ -165,7 +165,7 @@ fn save_open_dump_render_and_continue_a_document() {
     let (code, out, err) = brushye(&["dump", &doc, "--layers", &layers], None);
     assert_eq!(code, 0, "{err}");
     let j: serde_json::Value = serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}: {out}"));
-    assert_eq!(j["format_version"], 1);
+    assert_eq!(j["format_version"], brushye_format::brsh::FORMAT_VERSION);
     assert_eq!(format!("\"{}\"", j["hash"].as_str().unwrap_or("")), h);
     assert_eq!(j["layers"][0]["tiles"], 2);
     assert_eq!(j["journal_lines"], 6);
