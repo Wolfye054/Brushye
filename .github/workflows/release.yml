@@ -70,8 +70,13 @@ jobs:
           ln -s usr/bin/brushye-app "$app/AppRun"
           cp LICENSE-MIT LICENSE-APACHE crates/brushye-app/assets/fonts/LICENSE-GoFonts.txt crates/brushye-app/assets/fonts/LICENSE-Phosphor.txt "$app/usr/share/doc/brushye/"
           out="brushye-${GITHUB_REF_NAME//\//-}-x86_64.AppImage"
-          # No FUSE on the runner: the tool extracts itself and runs.
-          APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 ./appimagetool --no-appstream "$app" "$out"
+          # Embedded update information: AppImage updaters (e.g. Gear Lever) look for the
+          # .zsync file of the newest non-draft, non-prerelease GitHub release.
+          upd="gh-releases-zsync|${GITHUB_REPOSITORY%%/*}|${GITHUB_REPOSITORY#*/}|latest|brushye-*-x86_64.AppImage.zsync"
+          # No FUSE on the runner: the tool extracts itself and runs. With -u it also writes
+          # "$out.zsync" next to the AppImage.
+          APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 ./appimagetool --no-appstream -u "$upd" "$app" "$out"
+          test -s "$out.zsync"
           echo "APPIMAGE=$out" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@v4
         with:
@@ -79,6 +84,7 @@ jobs:
           path: |
             ${{ env.ARCHIVE }}
             ${{ env.APPIMAGE }}
+            ${{ env.APPIMAGE && format('{0}.zsync', env.APPIMAGE) || '' }}
 
   draft-release:
     if: startsWith(github.ref, 'refs/tags/v')
