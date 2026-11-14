@@ -19,6 +19,8 @@ brushye-command = { path = "../brushye-command" }
 brushye-format = { path = "../brushye-format" }
 brushye-sut = { path = "../brushye-sut" }
 brushye-tablet = { path = "../brushye-tablet" }
+# Attach mode (D-022): the MCP tool core and local endpoint, without rmcp/tokio.
+brushye-mcp = { path = "../brushye-mcp", default-features = false }
 serde_json = "1"
 # Native file dialogs (D-019): Windows IFileDialog, macOS NSOpenPanel, Linux XDG portal.
 rfd = "0.17"

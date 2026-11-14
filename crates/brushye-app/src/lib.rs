@@ -8,6 +8,7 @@ pub mod curve_editor;
 pub mod display;
 pub mod fonts;
 pub mod icons;
+pub mod mcp_link;
 pub mod settings;
 pub mod ui;
 pub mod view;

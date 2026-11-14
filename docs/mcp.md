@@ -6,9 +6,13 @@ documents through Brushye's command layer. It is one more client of that layer, 
 the app: every change goes through the same commands (D-010, D-011), so everything an AI client
 does is in the journal and replays exactly.
 
-The server runs **headless** and holds **one session**: a document, its undo history and
-journal, and the tool state (tools, sub tools, colours). It starts with the built-in tool set,
-not the app's saved one. It speaks MCP over stdio. Logs go to stderr.
+The server speaks MCP over stdio, and logs go to stderr. It runs in one of two modes:
+
+- **Headless** (the default). It holds **one session**: a document, its undo history and
+  journal, and the tool state (tools, sub tools, colours). It starts with the built-in tool set,
+  not the app's saved one.
+- **Attached** (`--attach`, D-022). It drives the **running Brushye window**: the open
+  document, its History and Journal, and the user's tools. See below.
 
 ## Running it
 
@@ -30,6 +34,29 @@ Other clients take the usual stdio entry:
 
 The file tools read and write any path the user running the server can access, as the
 `brushye` CLI does. Only connect clients you trust with those files.
+
+## Attach mode
+
+1. In Brushye, turn on **File > Allow AI clients (MCP)**. It is off at every start. While it
+   is on, the canvas status strip shows *AI clients allowed*, or *AI client connected* with a
+   **Disconnect** button.
+2. Start the server with `--attach`, for example
+   `claude mcp add brushye-app -- /path/to/brushye-mcp --attach`. With more than one window
+   allowing AI clients, pass the process id: `--attach 12345`.
+
+In attach mode:
+- Tool calls run in the app between frames, as if the user had done them. Each change is one
+  History step, and undo, the Journal window and autosave all see it. A call waits while the
+  user is drawing a stroke or has a dialog open.
+- `doc_open` and `replay` replace the open document. If it has unsaved changes, the app asks
+  the user first. Cancel returns a tool error.
+- `doc_save` to the document's own file counts as saving it.
+- The server connects on the first tool call and reconnects if the app restarts or AI access is
+  toggled. With AI access off, tools return an error that says how to turn it on.
+
+The endpoint is local only. On Linux and macOS it is a Unix socket in a directory private to
+the user (`$XDG_RUNTIME_DIR/brushye`, or the per-user temp dir). On Windows it is a named pipe
+that rejects remote clients. `BRUSHYE_RUNTIME_DIR` overrides the directory.
 
 ## Tools
 
@@ -72,9 +99,14 @@ them.
 
 ## Implementation notes
 
-- `src/lib.rs` is the server core. It is synchronous, has no MCP types, and is tested
-  directly (`tests/server.rs`). `src/main.rs` adapts it to `rmcp` (D-016). `tests/protocol.rs`
-  drives the binary over stdio with raw JSON-RPC.
+- `src/lib.rs` is the server core. It is synchronous and has no MCP types. Its tools run on a
+  `Host`: the headless `Server`, or the app (`brushye-app/src/mcp_link.rs`). It is tested
+  directly (`tests/server.rs`). `src/main.rs` adapts it to `rmcp` (D-016) and is built only
+  with the default `server` feature; the app uses the library without it, so it doesn't link
+  rmcp or tokio. `tests/protocol.rs` drives the binary over stdio with raw JSON-RPC.
+- `src/attach.rs` is attach mode: the endpoint the app listens on, discovery, the wire format
+  (one JSON object per line) and the client the bridge uses. `tests/attach.rs` tests it with a
+  headless host standing in for the app, including the real binary in `--attach` mode.
 - The tool list is fixed. Commands and queries reach clients through `run`, `command` and
   `query`, and are listed in the `command` tool's `cmd` enum and in `help`. A new command in
   the registry is available over MCP with no change to this crate.

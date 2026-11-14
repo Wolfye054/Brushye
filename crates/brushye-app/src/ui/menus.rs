@@ -146,6 +146,12 @@ fn file_menu(app: &mut App, ui: &mut Ui, ctx: &egui::Context) {
             "Modifier key settings…",
         ],
     );
+    // Brushye-only (D-022): let `brushye-mcp --attach` drive this window. Never saved.
+    let on = app.mcp_enabled();
+    if check(ui, "Allow AI clients (MCP)", "", on, true) {
+        let ctx = ui.ctx().clone();
+        app.set_mcp(!on, &ctx);
+    }
     ui.separator();
     item(ui, "Manage fonts…", "", false);
     ui.separator();

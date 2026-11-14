@@ -600,7 +600,7 @@ crates/
 - **Why:** exact CSP behaviour is a top priority, and alpha journals are few. Saved documents
   keep their pixels either way.
 
-## D-022 MCP clients can drive the running app (attach mode) — ACCEPTED (2026-11-14)
+## D-022 MCP clients can drive the running app (attach mode) — ACCEPTED, IMPLEMENTED (2026-11-14)
 - **Date:** proposed and accepted by the maintainer 2026-11-14 (M9).
 - **Problem:** `brushye-mcp` holds its own headless session. An AI client can't paint in, or
   look at, the document open in the app window.
@@ -649,3 +649,23 @@ crates/
 - **Cost:** about 2–3 days: the endpoint and permissions on three OSes, the request queue in
   the app, the `ToolHost` refactor, the menu item and status indicator, and tests (a headless
   app-core test with a fake endpoint; a manual check on each OS).
+- **Implemented (2026-11-14):**
+  - `brushye_mcp::Host` (the proposal's `ToolHost`): the tool dispatch is a provided method.
+    `Server` (headless) and the app (`crates/brushye-app/src/mcp_link.rs`) implement it.
+  - `brushye_mcp::attach` has the endpoint, discovery files (`<pid>.endpoint`), the wire format
+    and the client. `BRUSHYE_RUNTIME_DIR` overrides the directory.
+  - `brushye-mcp --attach [PID]` connects on first use and reconnects after a dropped
+    connection. When no window allows AI clients, it returns a tool error saying how to turn it
+    on.
+  - **Refinement, Unix:** the socket is a file path, never a Linux abstract socket (abstract
+    sockets have no permissions). Ownership is enforced by `chmod 0700` on the directory, which
+    fails for a directory another user created.
+  - **Refinement, Windows (not yet tested on Windows):** the pipe rejects remote clients and
+    keeps the default named-pipe DACL. That DACL gives other local users read-only access, so
+    they can't send requests. A user-only DACL can follow if Windows testing shows a need.
+  - **Turning it off** removes the endpoint. A connected client's next call closes its
+    connection, and the bridge reports that no window is listening.
+  - **Waiting:** requests wait while a stroke, a dialog or a native file dialog is open.
+  - **Verified:** automated tests (`crates/brushye-mcp/tests/attach.rs`). Also checked in the
+    app under Xvfb: AI painting on the user's canvas; the open-over-unsaved confirmation, both
+    Cancel and Discard; Turn off.

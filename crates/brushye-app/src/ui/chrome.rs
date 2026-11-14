@@ -255,8 +255,43 @@ pub fn status_strip(app: &mut App, ui: &mut Ui, r: Rect) {
         app.view.rotate_by(-a, center);
     }
     x += 4.0;
+    // AI access indicator (D-022), at the right end while File > Allow AI clients is on.
+    let mut right = r.right();
+    if let Some(n) = app.mcp.as_ref().map(|l| l.connected()) {
+        let w = 190.0;
+        right -= w;
+        let ir = Rect::from_min_max(pos2(right, r.top()), r.max);
+        widgets::fill(ui, ir, c.status);
+        let (icon, text) = if n > 0 {
+            (icons::PLUGS_CONNECTED, "AI client connected")
+        } else {
+            (icons::PLUGS, "AI clients allowed")
+        };
+        let mut off = false;
+        widgets::area(ui, ir, |ui| {
+            ui.horizontal_centered(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.label(egui::RichText::new(icon).size(12.0).color(c.text));
+                ui.label(egui::RichText::new(text).size(10.0).color(c.text));
+                off = ui
+                    .small_button(if n > 0 { "Disconnect" } else { "Turn off" })
+                    .on_hover_text(
+                        "Stop AI clients from using this window (File > Allow AI clients)",
+                    )
+                    .clicked();
+            });
+        });
+        if off {
+            let ctx = ui.ctx().clone();
+            app.set_mcp(false, &ctx);
+        }
+    }
     if app.ui.visible.scroll_bars {
-        h_scroll(app, ui, Rect::from_min_max(pos2(x, r.top()), r.max));
+        h_scroll(
+            app,
+            ui,
+            Rect::from_min_max(pos2(x, r.top()), pos2(right, r.bottom())),
+        );
     }
 }
 

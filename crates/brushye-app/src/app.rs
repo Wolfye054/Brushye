@@ -76,6 +76,10 @@ pub enum Dialog {
     },
     /// Discard unsaved changes, then run the action.
     Confirm(Box<Action>),
+    /// An AI client asks to open or replay a document over unsaved changes (D-022).
+    McpReplace(brushye_mcp::attach::Request),
+    /// A message with an OK button.
+    Notice(String),
 }
 
 /// Actions that may need a "discard changes?" confirmation.
@@ -126,6 +130,8 @@ pub struct App {
     tools_saved: u64,
     /// The native file dialog that is open, if any (D-019).
     pub(crate) file_dialog: Option<crate::ui::dialogs::PendingFile>,
+    /// AI clients attached through `brushye-mcp --attach` (D-022); `None` when not allowed.
+    pub(crate) mcp: Option<crate::mcp_link::McpLink>,
 }
 
 /// Seconds between autosave snapshots while there are unsaved changes.
@@ -223,6 +229,7 @@ impl App {
             restored: None,
             tools_saved: 0,
             file_dialog: None,
+            mcp: None,
         };
         // The user's saved sub tools become the session's tool state (D-018).
         app.session.set_tools(app.ui.tools.clone());
@@ -325,6 +332,18 @@ impl App {
 
     pub(crate) fn dirty(&self) -> bool {
         self.session.journal_len() != self.saved_len
+    }
+
+    /// A pen stroke is in progress.
+    pub(crate) fn drawing(&self) -> bool {
+        self.live.is_some()
+    }
+
+    /// The current state counts as saved (an AI client saved to the document's own file).
+    pub(crate) fn mark_saved(&mut self) {
+        self.saved_len = self.session.journal_len();
+        self.restored = None;
+        self.clear_autosave();
     }
 
     pub(crate) fn doc_name(&self) -> String {
@@ -722,7 +741,7 @@ impl App {
 
     // ---------------------------------------------------------------- files
 
-    fn replace_session(&mut self, mut s: Session, path: Option<PathBuf>) {
+    pub(crate) fn replace_session(&mut self, mut s: Session, path: Option<PathBuf>) {
         apply_settings(&mut s, &self.settings);
         // Tools and colours are application state: they carry over to the new document.
         s.set_tools(self.session.tools().clone());
@@ -752,7 +771,7 @@ impl App {
         }
     }
 
-    fn remember_recent(&mut self, path: &str) {
+    pub(crate) fn remember_recent(&mut self, path: &str) {
         let p = std::path::Path::new(path)
             .canonicalize()
             .map_or_else(|_| path.to_owned(), |p| p.to_string_lossy().into_owned());
@@ -1402,6 +1421,7 @@ impl eframe::App for App {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        self.poll_mcp(ui.ctx());
         self.sync_tools();
         // Before the frame, so a request made last frame never shows its in-app window.
         crate::ui::dialogs::native(self, frame, ui.ctx());
@@ -1411,6 +1431,8 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self) {
+        // Stop listening for AI clients (removes the endpoint and its discovery file).
+        self.mcp = None;
         // A normal exit with nothing unsaved leaves no recovery file behind.
         if !self.dirty() {
             self.clear_autosave();

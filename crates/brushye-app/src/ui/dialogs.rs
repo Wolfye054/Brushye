@@ -266,6 +266,8 @@ pub fn dialogs(app: &mut App, ctx: &egui::Context) {
     };
     let mut open = true;
     let mut done = false;
+    // McpReplace: the user's answer (true = discard changes and run the request).
+    let mut decision: Option<bool> = None;
     let title = match &d {
         Dialog::New { .. } => "New",
         Dialog::Open { .. } => "Open",
@@ -273,7 +275,8 @@ pub fn dialogs(app: &mut App, ctx: &egui::Context) {
         Dialog::SaveDuplicate { .. } => "Save duplicate",
         Dialog::ExportPng { .. } => "Export (.png)",
         Dialog::PenPressure { .. } => "Pen pressure settings",
-        Dialog::Confirm(_) => "Brushye",
+        Dialog::Confirm(_) | Dialog::Notice(_) => "Brushye",
+        Dialog::McpReplace(_) => "AI client",
     };
     egui::Window::new(title)
         .collapsible(false)
@@ -363,6 +366,35 @@ pub fn dialogs(app: &mut App, ctx: &egui::Context) {
                     }
                 });
             }
+            Dialog::Notice(msg) => {
+                ui.label(msg.as_str());
+                if ui.button("OK").clicked() {
+                    done = true;
+                }
+            }
+            Dialog::McpReplace(req) => {
+                let what = if req.tool == "replay" {
+                    "replay a journal, replacing the canvas".to_owned()
+                } else {
+                    format!(
+                        "open {}",
+                        req.args
+                            .get("path")
+                            .and_then(|p| p.as_str())
+                            .unwrap_or("a document")
+                    )
+                };
+                ui.label(format!("An AI client wants to {what}."));
+                ui.label("The canvas has unsaved changes. Discard them?");
+                ui.horizontal(|ui| {
+                    if ui.button("Discard changes").clicked() {
+                        decision = Some(true);
+                    }
+                    if ui.button("Cancel").clicked() {
+                        decision = Some(false);
+                    }
+                });
+            }
             Dialog::Confirm(action) => {
                 ui.label("The canvas has unsaved changes. Discard them?");
                 ui.horizontal(|ui| {
@@ -377,6 +409,19 @@ pub fn dialogs(app: &mut App, ctx: &egui::Context) {
                 });
             }
         });
+    if !open && matches!(d, Dialog::McpReplace(_)) {
+        decision = decision.or(Some(false));
+    }
+    if let Some(ok) = decision {
+        if let Dialog::McpReplace(req) = d {
+            if ok {
+                app.run_mcp(req);
+            } else {
+                req.reply(Err("The user kept the unsaved canvas (cancelled).".into()));
+            }
+        }
+        return;
+    }
     if open && !done && app.dialog.is_none() {
         app.dialog = Some(d);
     }
