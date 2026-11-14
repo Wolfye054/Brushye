@@ -11,6 +11,8 @@ publish = false
 workspace = true
 
 [dependencies]
+# Correctly specified, pure-Rust sin/cos for the tip angle: identical on every platform (D-012, D-016).
+libm = "0.2"
 
 [dev-dependencies]
 png = "0.18"

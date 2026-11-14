@@ -1,28 +1,29 @@
-//! The brush engine (milestone M4): round tips, spacing, in-stroke build-up and pressure
-//! dynamics, matching CSP 1.13.2 as observed (specs B-001 … B-006, B-009).
+//! The brush engine (milestone M4), matching CSP 1.13.2 as observed (specs B-001 … B-010).
 //!
-//! A stroke is rendered in three steps:
-//! 1. **Dab placement** (B-002). Dab k sits at arc length t_k along the input polyline from the
-//!    press point, t_k = k·s with s = max(1 px, gap% · size); with pressure-driven size the
-//!    gap follows each dab's size. The stroke ends at the last dab at or before the release
+//! A stroke is rendered in four steps:
+//! 1. **Path** (`path`, B-002/B-007): input events, optionally stabilized, are the control
+//!    points of a quadratic B-spline.
+//! 2. **Dab placement** (B-002): dab k sits at arc length t_k along the path from the press
+//!    point, t_k = k·s with s = max(1 px, gap% · size); with pressure-driven size the gap after
+//!    a dab follows that dab's size. The stroke ends at the last dab at or before the release
 //!    point.
-//! 2. **Stroke buffer** (B-003). Per pixel, dabs of one stroke build up as
-//!    B = 1 − ∏(1 − cₖ·Dₖ), with coverage c (tip, B-001/B-009) and density D; the stroke's
-//!    alpha is a = O·B (opacity scales the buffer, it is not a cap).
-//! 3. **Commit** when the stroke ends: a8 = ⌊65535·a⌋ >> 8 (CSP truncates, B-001/B-003), then
-//!    over the layer in 8-bit: A' = A + a8 − ⌊A·a8 / 255⌋, which reproduces the observed
-//!    stroke-over-stroke levels (111, 135, 191 in B-003).
+//! 3. **Stroke buffer** (B-003): per pixel, dabs of one stroke build up as
+//!    B = 1 − ∏(1 − cₖ·Dₖ), with tip coverage c (`tip`, B-001/B-009/B-010) and density D;
+//!    the stroke's alpha is a = O·B (opacity scales the buffer, it is not a cap).
+//! 4. **Commit** when the stroke ends (`ink`, B-003/B-008): the ink mode combines the
+//!    unquantised a with the 8-bit layer.
 //!
-//! Determinism (D-012): only `+ - * / sqrt` on f64, in a fixed order, so results are
-//! bit-identical on every platform.
+//! Determinism (D-012): only `+ - * / sqrt` on f64 in a fixed order, plus `libm` sin/cos for
+//! the tip angle (pure Rust, identical on every platform).
 //!
-//! Open (see the specs): the AA None edge rule, the exact soft-tip falloff and its centre,
-//! curves with several points, spacing with pressure-driven size, colour when a stroke lands
-//! on differently coloured pixels, and per-dab varying opacity (the buffer keeps the highest
-//! opacity seen at each pixel).
+//! Open (see the specs): the exact soft-tip falloff (table model), AA None ties, stabilization
+//! above 20, colour mixing (B-011), tilt input (B-010), per-dab varying opacity (each pixel
+//! keeps the highest opacity of the dabs covering it).
 
 pub mod curve;
 mod hardness_tables;
+pub mod ink;
+pub mod path;
 pub mod tip;
 
 use std::collections::BTreeMap;
@@ -31,7 +32,8 @@ use crate::document::Layer;
 use crate::input::Sample;
 
 pub use curve::{Curve, CurveError};
-pub use tip::{Aa, HARDNESS_MAX};
+pub use ink::InkMode;
+pub use tip::{Aa, HARDNESS_MAX, Shape, TipAxis};
 
 /// Dab gap preset (B-002): spacing = max(1 px, k · size).
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -59,10 +61,12 @@ impl Gap {
     }
 }
 
-/// Fixed gap range accepted, in percent of size (CSP's range is not yet known; 10–90 observed).
+/// Fixed gap range accepted, in percent of size (CSP's range is not known; 10–300 observed).
 pub const FIXED_GAP_RANGE: std::ops::RangeInclusive<f64> = 0.1..=1000.0;
 /// Largest brush size in px.
 pub const MAX_SIZE: f64 = 5000.0;
+/// Largest stabilization setting (CSP's range).
+pub const MAX_STABILIZATION: u8 = 100;
 
 /// Pen pressure dynamics for one setting: value × (min + (1 − min)·curve(P)) (B-004/B-005).
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -91,7 +95,19 @@ pub struct BrushSettings {
     pub density: f64,
     /// Ink opacity, 0..=1.
     pub opacity: f64,
+    pub ink: InkMode,
     pub gap: Gap,
+    /// "Adjust brush density by gap" (B-002 run 2).
+    pub density_by_gap: bool,
+    /// Tip thickness, (0, 1]; 1 = round.
+    pub thickness: f64,
+    pub tip_axis: TipAxis,
+    /// Tip angle in degrees, clockwise on screen (B-010).
+    pub angle: f64,
+    /// Angle follows the direction of the line (B-010).
+    pub angle_follows_line: bool,
+    /// Stabilization 0..=100 (B-007).
+    pub stabilization: u8,
     pub size_pressure: Option<Dynamics>,
     pub opacity_pressure: Option<Dynamics>,
     pub density_pressure: Option<Dynamics>,
@@ -106,7 +122,14 @@ impl Default for BrushSettings {
             hardness: HARDNESS_MAX,
             density: 1.0,
             opacity: 1.0,
+            ink: InkMode::Normal,
             gap: Gap::Normal,
+            density_by_gap: false,
+            thickness: 1.0,
+            tip_axis: TipAxis::Vertical,
+            angle: 0.0,
+            angle_follows_line: false,
+            stabilization: 0,
             size_pressure: None,
             opacity_pressure: None,
             density_pressure: None,
@@ -137,6 +160,15 @@ impl BrushSettings {
         if !(0.0..=1.0).contains(&self.density) || !(0.0..=1.0).contains(&self.opacity) {
             return bad("density and opacity must be 0..=100 %".into());
         }
+        if !(self.thickness > 0.0 && self.thickness <= 1.0) {
+            return bad("thickness must be 1..=100 %".into());
+        }
+        if !self.angle.is_finite() {
+            return bad("angle must be finite".into());
+        }
+        if self.stabilization > MAX_STABILIZATION {
+            return bad(format!("stabilization must be 0..={MAX_STABILIZATION}"));
+        }
         if let Gap::Fixed(v) = self.gap {
             if !FIXED_GAP_RANGE.contains(&v) {
                 return bad(format!(
@@ -160,115 +192,106 @@ impl BrushSettings {
         }
         Ok(())
     }
+
+    /// Unit vector of the tip's long axis for a dab travelling along `dir` (B-010).
+    fn axis(&self, dir: [f64; 2]) -> [f64; 2] {
+        let rad = self.angle.rem_euclid(360.0) * (std::f64::consts::PI / 180.0);
+        let (s, c) = (libm::sin(rad), libm::cos(rad));
+        // Angle 0 = long axis horizontal; "Horizontal" shortens the other axis (+90°).
+        let base = if self.angle_follows_line {
+            dir
+        } else {
+            [1.0, 0.0]
+        };
+        let base = match self.tip_axis {
+            TipAxis::Vertical => base,
+            TipAxis::Horizontal => [-base[1], base[0]],
+        };
+        // Rotate clockwise on screen (y down) by the angle.
+        [base[0] * c - base[1] * s, base[0] * s + base[1] * c]
+    }
 }
 
 /// One placed dab.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Dab {
+    /// Input point (before the tip's centre offset).
     pub x: f64,
     pub y: f64,
     /// Diameter in px.
     pub size: f64,
     pub opacity: f64,
     pub density: f64,
+    /// Unit vector of the tip's long axis.
+    pub axis: [f64; 2],
 }
 
-/// Point of the input polyline.
-#[derive(Clone, Copy, Debug)]
-struct Pt {
-    x: f64,
-    y: f64,
-    p: f64,
+/// The path a stroke's dabs follow: stabilized, smoothed input (B-002, B-007).
+pub fn stroke_path(s: &BrushSettings, samples: &[Sample]) -> path::Polyline {
+    // Mouse input counts as full pressure (B-004).
+    let raw: Vec<path::Pt> = samples
+        .iter()
+        .map(|q| path::Pt {
+            x: q.x,
+            y: q.y,
+            p: q.pressure.map_or(1.0, f64::from),
+        })
+        .collect();
+    let pts = path::stabilize(&path::dedup(raw), s.stabilization);
+    path::Polyline::new(path::spline(&pts))
 }
 
 /// Dabs of a stroke, in order (B-002 placement, B-004/B-005 dynamics).
 pub fn place_dabs(s: &BrushSettings, samples: &[Sample]) -> Vec<Dab> {
-    // Mouse input counts as full pressure (B-004).
-    let mut pts: Vec<Pt> = Vec::with_capacity(samples.len());
-    for smp in samples {
-        let p = smp.pressure.map_or(1.0, f64::from);
-        match pts.last_mut() {
-            // Repeated positions add no length; the latest pressure wins.
-            Some(l) if l.x == smp.x && l.y == smp.y => l.p = p,
-            _ => pts.push(Pt {
-                x: smp.x,
-                y: smp.y,
-                p,
-            }),
-        }
-    }
-    let Some(&first) = pts.first() else {
+    let line = stroke_path(s, samples);
+    if line.is_empty() {
         return Vec::new();
-    };
-    // Cumulative arc length at each point.
-    let mut cum = Vec::with_capacity(pts.len());
-    let mut total = 0.0;
-    cum.push(0.0);
-    for w in pts.windows(2) {
-        let (dx, dy) = (w[1].x - w[0].x, w[1].y - w[0].y);
-        total += (dx * dx + dy * dy).sqrt();
-        cum.push(total);
     }
-
-    let dab_at = |pt: Pt| -> Dab {
-        let f = |d: &Option<Dynamics>| d.as_ref().map_or(1.0, |d| d.factor(pt.p));
-        Dab {
-            x: pt.x,
-            y: pt.y,
-            size: s.size * f(&s.size_pressure),
-            opacity: s.opacity * f(&s.opacity_pressure),
-            density: s.density * f(&s.density_pressure),
-        }
-    };
+    let total = line.len();
     let gap = s.gap.percent();
     // Constant size: t_k = k·gap·size/100 computed directly (no accumulated rounding; B-002
     // shows ties at exact pixel boundaries resolve as exact arithmetic).
     let constant = s.size_pressure.is_none() && gap * s.size / 100.0 >= 1.0;
+    let f = |d: &Option<Dynamics>, p: f64| d.as_ref().map_or(1.0, |d| d.factor(p));
 
     let mut dabs = Vec::new();
     let mut seg = 0usize;
     let mut t = 0.0f64;
     let mut k: u64 = 0;
     const EPS: f64 = 1e-9;
-    loop {
-        if t > total + EPS {
+    while t <= total + EPS {
+        let Some(at) = line.at(t, &mut seg) else {
             break;
-        }
-        while seg + 1 < cum.len() - 1 && cum[seg + 1] < t {
-            seg += 1;
-        }
-        let pt = if pts.len() == 1 {
-            first
-        } else {
-            let (a, b) = (pts[seg], pts[seg + 1]);
-            let len = cum[seg + 1] - cum[seg];
-            let u = if len > 0.0 {
-                ((t - cum[seg]) / len).clamp(0.0, 1.0)
-            } else {
-                0.0
-            };
-            let along = (t - cum[seg]).clamp(0.0, len);
-            let (ux, uy) = ((b.x - a.x) / len, (b.y - a.y) / len);
-            Pt {
-                x: a.x + along * ux,
-                y: a.y + along * uy,
-                p: a.p + (b.p - a.p) * u,
-            }
         };
-        let dab = dab_at(pt);
+        let p = at.pt.p;
+        let size = s.size * f(&s.size_pressure, p);
+        let spacing = (gap * size / 100.0).max(1.0);
+        let mut density = s.density * f(&s.density_pressure, p);
+        if s.density_by_gap && size > 0.0 {
+            // d' = D·s / (size/3): density normalised to a gap of a third of the size
+            // (B-002 run 2; gaps above 33 % unobserved, capped at full density).
+            density = (density * 3.0 * spacing / size).min(1.0);
+        }
         // Zero pressure places no ink (B-004), but the lattice continues.
-        if pt.p > 0.0 && dab.size > 0.0 {
-            dabs.push(dab);
+        if p > 0.0 && size > 0.0 {
+            dabs.push(Dab {
+                x: at.pt.x,
+                y: at.pt.y,
+                size,
+                opacity: s.opacity * f(&s.opacity_pressure, p),
+                density,
+                axis: s.axis(at.dir),
+            });
+        }
+        if total == 0.0 {
+            break;
         }
         k += 1;
         t = if constant {
             (k as f64 * gap * s.size) / 100.0
         } else {
-            t + (gap * dab.size / 100.0).max(1.0)
+            t + spacing
         };
-        if total == 0.0 {
-            break;
-        }
     }
     dabs
 }
@@ -297,24 +320,23 @@ impl StrokeBuffer {
 
     /// Add one dab.
     pub fn dab(&mut self, s: &BrushSettings, d: &Dab) {
-        let r = d.size / 2.0;
-        let soft = s.hardness < HARDNESS_MAX;
-        let off = if soft { tip::SOFT_CENTRE_OFFSET } else { 0.0 };
-        let (cx, cy) = (d.x + off, d.y + off);
-        let reach = tip::reach(r, s.hardness);
+        let shape = Shape {
+            r: d.size / 2.0,
+            thickness: s.thickness,
+            axis: d.axis,
+            aa: s.aa,
+            hardness: s.hardness,
+        };
+        let (ox, oy) = shape.centre_offset();
+        let (cx, cy) = (d.x + ox, d.y + oy);
+        let reach = shape.reach();
         let x0 = ((cx - reach - 1.0).floor().max(0.0)) as i64;
         let y0 = ((cy - reach - 1.0).floor().max(0.0)) as i64;
         let x1 = ((cx + reach + 1.0).ceil()).min(f64::from(self.bounds.0)) as i64;
         let y1 = ((cy + reach + 1.0).ceil()).min(f64::from(self.bounds.1)) as i64;
         for py in y0..y1 {
             for px in x0..x1 {
-                let c = tip::coverage(
-                    px as f64 + 0.5 - cx,
-                    py as f64 + 0.5 - cy,
-                    r,
-                    s.aa,
-                    s.hardness,
-                );
+                let c = shape.coverage(px as f64 + 0.5 - cx, py as f64 + 0.5 - cy);
                 if c <= 0.0 {
                     continue;
                 }
@@ -334,66 +356,46 @@ impl StrokeBuffer {
         }
     }
 
-    /// The stroke's 8-bit alpha at each touched pixel, in a fixed order: (x, y, a8), a8 > 0.
-    pub fn alphas(&self) -> impl Iterator<Item = (u32, u32, u8)> + '_ {
+    /// The stroke's unquantised alpha a = O·B at each touched pixel, in a fixed order.
+    pub fn alphas(&self) -> impl Iterator<Item = (u32, u32, f64)> + '_ {
         self.chunks.iter().flat_map(|(&(cx, cy), ch)| {
             (0..CHUNK * CHUNK).filter_map(move |i| {
                 let a = ch.o[i] * (1.0 - ch.t[i]);
-                // CSP truncates to 8 bits (B-001/B-003).
-                let a8 = ((65535.0 * a) as u32 >> 8).min(255) as u8;
-                (a8 > 0).then(|| {
+                (a > 0.0).then(|| {
                     (
                         cx as u32 * CHUNK as u32 + (i % CHUNK) as u32,
                         cy as u32 * CHUNK as u32 + (i / CHUNK) as u32,
-                        a8,
+                        a,
                     )
                 })
             })
         })
     }
 
-    /// Composite the stroke onto a layer (straight RGBA8), honouring lock transparency.
-    pub fn commit(&self, layer: &mut Layer, color: [u8; 3]) {
+    /// Composite the stroke onto a layer (straight RGBA8) with an ink mode, honouring lock
+    /// transparency.
+    pub fn commit(&self, layer: &mut Layer, color: [u8; 3], mode: InkMode) {
         use crate::tile::TILE_SIZE;
-        for (x, y, a8) in self.alphas() {
+        for (x, y, a) in self.alphas() {
             let (tx, ty) = (
                 (x as usize / TILE_SIZE) as i32,
                 (y as usize / TILE_SIZE) as i32,
             );
             let i = ((y as usize % TILE_SIZE) * TILE_SIZE + x as usize % TILE_SIZE) * 4;
-            if layer.lock_alpha && layer.tiles.get((tx, ty)).is_none() {
-                continue;
+            let dst = match layer.tiles.get((tx, ty)) {
+                Some(t) => [t.px[i], t.px[i + 1], t.px[i + 2], t.px[i + 3]],
+                None => [0; 4],
+            };
+            let out = ink::apply(mode, dst, color, a, layer.lock_alpha);
+            if out != dst {
+                layer.tiles.get_mut((tx, ty)).px[i..i + 4].copy_from_slice(&out);
             }
-            let tile = layer.tiles.get_mut((tx, ty));
-            let dst = [tile.px[i], tile.px[i + 1], tile.px[i + 2], tile.px[i + 3]];
-            let out = over(dst, color, a8, layer.lock_alpha);
-            tile.px[i..i + 4].copy_from_slice(&out);
         }
         layer.tiles.prune();
     }
 }
 
-/// A stroke pixel (colour `s`, alpha `a8`) over a layer pixel `b` (B-003 alpha; colour open).
-pub fn over(b: [u8; 4], s: [u8; 3], a8: u8, lock_alpha: bool) -> [u8; 4] {
-    let (ab, at) = (u32::from(b[3]), u32::from(a8));
-    if lock_alpha {
-        if ab == 0 {
-            return b;
-        }
-        let c =
-            |i: usize| ((u32::from(b[i]) * (255 - at) + u32::from(s[i]) * at + 127) / 255) as u8;
-        return [c(0), c(1), c(2), b[3]];
-    }
-    let ao = ab + at - ab * at / 255;
-    if ao == 0 {
-        return b;
-    }
-    let wb = ao - at;
-    let c = |i: usize| ((u32::from(s[i]) * at + u32::from(b[i]) * wb + ao / 2) / ao) as u8;
-    [c(0), c(1), c(2), ao as u8]
-}
-
-/// Render one stroke onto a layer: place dabs, build the stroke buffer, commit.
+/// Render one stroke onto a layer: path, dabs, stroke buffer, commit.
 pub fn stroke(
     layer: &mut Layer,
     bounds: (u32, u32),
@@ -408,7 +410,7 @@ pub fn stroke(
     for d in place_dabs(s, samples) {
         buf.dab(s, &d);
     }
-    buf.commit(layer, s.color);
+    buf.commit(layer, s.color, s.ink);
     Ok(())
 }
 
@@ -464,8 +466,7 @@ mod tests {
     }
 
     #[test]
-    fn build_up_matches_b003_levels() {
-        // One dab at density 30 % → 76; two strokes of 63 → 111; 95 under 63 → 135.
+    fn one_dab_at_density_30_is_76() {
         let mut buf = StrokeBuffer::new((8, 8));
         let s = BrushSettings {
             aa: Aa::None,
@@ -473,21 +474,26 @@ mod tests {
             size: 4.0,
             ..Default::default()
         };
-        buf.dab(
-            &s,
-            &Dab {
-                x: 4.0,
-                y: 4.0,
-                size: 4.0,
-                opacity: 1.0,
-                density: 0.3,
-            },
-        );
-        assert!(buf.alphas().all(|(_, _, a)| a == 76));
-        assert_eq!(over([0, 0, 0, 63], [0, 0, 0], 63, false)[3], 111);
-        assert_eq!(over([0, 0, 0, 95], [0, 0, 0], 63, false)[3], 135);
-        assert_eq!(over([0, 0, 0, 127], [0, 0, 0], 127, false)[3], 191);
-        assert_eq!(over([9, 9, 9, 255], [0, 0, 0], 200, false)[3], 255);
-        assert_eq!(over([0; 4], [7, 8, 9], 1, false), [7, 8, 9, 1]);
+        for d in place_dabs(&s, &[smp(4.0, 4.0)]) {
+            buf.dab(&s, &d);
+        }
+        assert!(buf.alphas().all(|(_, _, a)| ink::trunc8(a) == 76));
+    }
+
+    #[test]
+    fn axis_follows_angle_and_line() {
+        let close =
+            |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).abs() < 1e-12 && (a[1] - b[1]).abs() < 1e-12;
+        let mut s = BrushSettings::default();
+        assert!(close(s.axis([0.0, 1.0]), [1.0, 0.0]));
+        s.angle = 90.0;
+        // Clockwise on screen: the long axis points down.
+        assert!(close(s.axis([1.0, 0.0]), [0.0, 1.0]));
+        s.angle = 0.0;
+        s.tip_axis = TipAxis::Horizontal;
+        assert!(close(s.axis([1.0, 0.0]), [0.0, 1.0]));
+        s.tip_axis = TipAxis::Vertical;
+        s.angle_follows_line = true;
+        assert!(close(s.axis([0.6, -0.8]), [0.6, -0.8]));
     }
 }

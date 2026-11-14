@@ -47,37 +47,150 @@ impl Aa {
 /// Hardest level of the 5-step hardness control (B-009).
 pub const HARDNESS_MAX: u8 = 5;
 
-/// Offset of a soft dab's centre from the input point, in px on both axes. Observed at one
-/// position only (B-009: the size-101 soft dabs centre on the pixel corner next to the press
-/// point); the hard tip has no offset (B-001).
+/// Offset of a soft dab's centre from the input point, in px on both axes: fixed, at every
+/// sub-pixel position and size (B-009 run 2). The hard round tip has no offset (B-001).
 pub const SOFT_CENTRE_OFFSET: f64 = 0.5;
+/// Offset of a thinned (elliptic) hard dab's centre in x (B-010 run 2).
+pub const THIN_CENTRE_OFFSET_X: f64 = -0.5;
+/// Extra half-width of each AA None scanline span, in px (B-001 run 2).
+pub const SCANLINE_SLACK: f64 = 0.1;
+
+/// Which axis tip thickness shortens (CSP's "Direction").
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+pub enum TipAxis {
+    /// Shortens the vertical axis at angle 0: a flat, wide dab.
+    #[default]
+    Vertical,
+    Horizontal,
+}
+
+impl TipAxis {
+    pub fn name(self) -> &'static str {
+        match self {
+            TipAxis::Vertical => "vertical",
+            TipAxis::Horizontal => "horizontal",
+        }
+    }
+    pub fn from_name(s: &str) -> Option<Self> {
+        match s {
+            "vertical" => Some(TipAxis::Vertical),
+            "horizontal" => Some(TipAxis::Horizontal),
+            _ => None,
+        }
+    }
+}
+
+/// One dab's shape: radius, thickness and orientation of its long axis.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Shape {
+    /// Radius along the long axis, px.
+    pub r: f64,
+    /// Short axis / long axis, (0, 1].
+    pub thickness: f64,
+    /// Unit vector of the long axis (screen coordinates, y down).
+    pub axis: [f64; 2],
+    pub aa: Aa,
+    pub hardness: u8,
+}
+
+impl Shape {
+    pub fn round(r: f64, aa: Aa, hardness: u8) -> Self {
+        Self {
+            r,
+            thickness: 1.0,
+            axis: [1.0, 0.0],
+            aa,
+            hardness,
+        }
+    }
+
+    fn thin(&self) -> bool {
+        self.thickness < 1.0
+    }
+
+    /// Offset of the dab centre from the input point.
+    pub fn centre_offset(&self) -> (f64, f64) {
+        if self.hardness < HARDNESS_MAX {
+            (SOFT_CENTRE_OFFSET, SOFT_CENTRE_OFFSET)
+        } else if self.thin() {
+            (THIN_CENTRE_OFFSET_X, 0.0)
+        } else {
+            (0.0, 0.0)
+        }
+    }
+
+    /// Radius beyond which the dab covers nothing.
+    pub fn reach(&self) -> f64 {
+        reach(self.r, self.hardness)
+    }
+
+    /// Coverage in [0, 1] of a pixel whose centre is (`dx`, `dy`) from the dab centre.
+    pub fn coverage(&self, dx: f64, dy: f64) -> f64 {
+        if !self.thin() {
+            return coverage(dx, dy, self.r, self.aa, self.hardness);
+        }
+        // Thin tip: an ellipse with semi-axes R and R·T (B-010). Distances are measured in
+        // the ellipse's frame with the short axis stretched back to R.
+        let along = dx * self.axis[0] + dy * self.axis[1];
+        let across = (dy * self.axis[0] - dx * self.axis[1]) / self.thickness;
+        if self.hardness >= HARDNESS_MAX && self.aa == Aa::None {
+            // Closed ellipse, exact on 3690 of 3694 px (B-010).
+            let r = self.r;
+            return if along * along + across * across <= r * r {
+                1.0
+            } else {
+                0.0
+            };
+        }
+        // AA edges and soft tips on thin dabs are not observed: the round model applied in the
+        // ellipse's frame.
+        coverage_radial(
+            (along * along + across * across).sqrt(),
+            self.r,
+            self.aa,
+            self.hardness,
+        )
+    }
+}
 
 /// Radius beyond which a dab of radius `r` covers nothing.
 pub fn reach(r: f64, hardness: u8) -> f64 {
     if hardness >= HARDNESS_MAX {
-        r.max(1.0)
+        r.max(1.0) + SCANLINE_SLACK
     } else {
         (PROFILES[0].len() as f64 - 1.0) * STEP * r / REF_RADIUS
     }
 }
 
-/// Coverage in [0, 1] of a pixel whose centre is (`dx`, `dy`) from the dab centre.
+/// Coverage in [0, 1] of a pixel whose centre is (`dx`, `dy`) from a round dab's centre.
 pub fn coverage(dx: f64, dy: f64, r: f64, aa: Aa, hardness: u8) -> f64 {
-    let d2 = dx * dx + dy * dy;
+    if hardness >= HARDNESS_MAX && aa == Aa::None {
+        // Scanline fill (B-001 run 2): rows with −R ≤ dy < R (the top tangent row counts, the
+        // bottom one doesn't); in a row, pixels with |dx| ≤ √(R² − dy²) + 0.1.
+        if dy < -r || dy >= r {
+            return 0.0;
+        }
+        let half = (r * r - dy * dy).max(0.0).sqrt() + SCANLINE_SLACK;
+        return if dx.abs() <= half { 1.0 } else { 0.0 };
+    }
+    coverage_radial((dx * dx + dy * dy).sqrt(), r, aa, hardness)
+}
+
+/// Round-tip coverage at distance `d` from the centre (AA levels and soft tips).
+fn coverage_radial(d: f64, r: f64, aa: Aa, hardness: u8) -> f64 {
     if hardness < HARDNESS_MAX {
-        return soft(d2.sqrt(), r, hardness);
+        return soft(d, r, hardness);
     }
     if aa == Aa::None {
-        // Closed disc. The exact rule for pixels exactly on the edge is open (B-001).
-        return if d2 <= r * r { 1.0 } else { 0.0 };
+        return if d <= r { 1.0 } else { 0.0 };
     }
     // B-001: dabs under 2 px keep a 1 px radius and scale their amplitude by R instead.
     let re = r.max(1.0);
-    if d2 >= re * re {
+    if d >= re {
         return 0.0;
     }
     let w = aa.ramp().min(r).max(1.0);
-    r.min(1.0) * ((re - d2.sqrt()) / w).clamp(0.0, 1.0)
+    r.min(1.0) * ((re - d) / w).clamp(0.0, 1.0)
 }
 
 /// Interim soft tip: the observed size-101 profile, scaled to radius `r` (B-009 open).
@@ -108,7 +221,11 @@ mod tests {
         assert_eq!(((65535.0 * c) as u32) >> 8, 37);
         // AA None draws nothing for size 0.7 at a pixel corner.
         assert_eq!(coverage(0.5, 0.5, 0.35, Aa::None, 5), 0.0);
-        // Closed disc.
+        // Scanline rule: size 2 at a pixel centre lights the top, left and right neighbours
+        // but not the bottom one (B-001).
+        assert_eq!(coverage(0.0, -1.0, 1.0, Aa::None, 5), 1.0);
         assert_eq!(coverage(1.0, 0.0, 1.0, Aa::None, 5), 1.0);
+        assert_eq!(coverage(-1.0, 0.0, 1.0, Aa::None, 5), 1.0);
+        assert_eq!(coverage(0.0, 1.0, 1.0, Aa::None, 5), 0.0);
     }
 }
