@@ -172,6 +172,7 @@ fn set_cmd(id: LayerId) -> commands::LayerSet {
         blend: None,
         locked: None,
         lock_alpha: None,
+        clip: None,
     }
 }
 
@@ -481,11 +482,20 @@ impl App {
         let id = self.doc().map_or(1, |d| {
             d.layers().iter().map(|l| l.id.0).max().unwrap_or(0) + 1
         });
+        // CSP (U-014): with an expanded folder selected the new layer goes inside it, at the
+        // top; otherwise directly above the selected layer (a collapsed folder included).
+        let active = self.session.active_layer();
+        let into_folder = active.filter(|a| {
+            self.doc()
+                .and_then(|d| d.layer(*a).map(|l| l.is_folder() && l.expanded))
+                .unwrap_or(false)
+        });
         self.exec(Command::LayerNew(commands::LayerNew {
             layer: LayerId(id),
             kind: None,
             name: Some(format!("Layer {id}")),
-            above: self.session.active_layer(),
+            above: if into_folder.is_some() { None } else { active },
+            into: into_folder,
         }));
     }
 
@@ -558,21 +568,25 @@ impl App {
                 layer: id,
                 above: None,
                 to: Some(commands::Place::Top),
+                into: None,
             },
             1 if i + 1 < ids.len() => commands::LayerMove {
                 layer: id,
                 above: Some(ids[i + 1]),
                 to: None,
+                into: None,
             },
             2 if i >= 2 => commands::LayerMove {
                 layer: id,
                 above: Some(ids[i - 2]),
                 to: None,
+                into: None,
             },
             2 | 3 if i > 0 => commands::LayerMove {
                 layer: id,
                 above: None,
                 to: Some(commands::Place::Bottom),
+                into: None,
             },
             _ => return,
         };

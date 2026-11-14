@@ -509,14 +509,16 @@ mod roundtrip {
                     layer,
                     kind: Some(LayerKind::Raster),
                     name,
-                    above
+                    above,
+                    into: None
                 })),
             id().prop_map(|layer| Command::LayerDelete(LayerDelete { layer })),
             (id(), proptest::option::of(id())).prop_map(|(layer, above)| Command::LayerMove(
                 LayerMove {
                     layer,
                     above,
-                    to: Some(Place::Top)
+                    to: Some(Place::Top),
+                    into: None
                 }
             )),
             (
@@ -535,6 +537,7 @@ mod roundtrip {
                         blend,
                         locked,
                         lock_alpha,
+                        clip: None,
                     })
                 }),
             (id(), any::<bool>())

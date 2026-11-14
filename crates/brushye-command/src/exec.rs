@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use brushye_core::brush::{BrushSettings, Curve};
 use brushye_core::document::DocError;
-use brushye_core::{Document, Layer, LayerId, LayerKind, Rgba8};
+use brushye_core::{BlendMode, Document, Layer, LayerId, LayerKind, Rgba8};
 use serde_json::{Value as Json, json};
 
 use crate::commands::{self, Class, Command, Paper, Place, Query};
@@ -97,6 +97,9 @@ fn merge_key(cmd: &Command) -> Option<MergeKey> {
             }
             if p.lock_alpha.is_some() {
                 keys.push("lock_alpha");
+            }
+            if p.clip.is_some() {
+                keys.push("clip");
             }
             Some(MergeKey {
                 cmd: "layer.set",
@@ -284,6 +287,17 @@ impl Session {
     }
 
     fn apply_undoable(&mut self, cmd: &Command, merge: bool) -> Result<(), ExecError> {
+        // After Ungroup, CSP's edit target is the folder's topmost child (U-014).
+        let ungrouped_top = match cmd {
+            Command::LayerUngroup(p) => self
+                .doc()?
+                .layers()
+                .iter()
+                .rev()
+                .find(|l| l.parent == Some(p.folder))
+                .map(|l| l.id),
+            _ => None,
+        };
         let mut d = Document::clone(self.doc()?);
         edit(&mut d, cmd, &self.pressure_curve)?;
         let doc = Arc::new(d);
@@ -305,8 +319,12 @@ impl Session {
             self.enforce_limit();
         }
         self.merge_open = merge_key(cmd);
-        if let Command::LayerNew(p) = cmd {
-            self.active = Some(p.layer);
+        match cmd {
+            Command::LayerNew(p) => self.active = Some(p.layer),
+            // Ctrl+G selects the new folder (U-014).
+            Command::LayerGroup(p) => self.active = Some(p.folder),
+            Command::LayerUngroup(_) => self.active = ungrouped_top.or(self.active),
+            _ => {}
         }
         self.fix_active();
         Ok(())
@@ -323,6 +341,22 @@ impl Session {
                     if s.doc.layer(p.layer).is_some_and(|l| l.visible != p.visible) {
                         let mut d = Document::clone(&s.doc);
                         d.layer_mut(p.layer)?.visible = p.visible;
+                        s.doc = Arc::new(d);
+                    }
+                }
+                Ok(())
+            }
+            Command::LayerExpand(p) => {
+                let d = self.doc()?;
+                let f = d.layer(p.folder).ok_or(DocError::NoSuchLayer(p.folder))?;
+                if !f.is_folder() {
+                    return Err(DocError::NotAFolder(p.folder).into());
+                }
+                // Not a History step (H-002): apply to every version that has this folder.
+                for s in &mut self.steps {
+                    if s.doc.layer(p.folder).is_some_and(|l| l.expanded != p.open) {
+                        let mut d = Document::clone(&s.doc);
+                        d.layer_mut(p.folder)?.expanded = p.open;
                         s.doc = Arc::new(d);
                     }
                 }
@@ -600,6 +634,11 @@ fn write_pixels(
     if l.locked {
         return Err(DocError::LayerLocked(id).into());
     }
+    if l.is_folder() {
+        return Err(ExecError(format!(
+            "{id}: a folder has no pixels of its own"
+        )));
+    }
     if l.lock_alpha {
         let mut kept = rgba.to_vec();
         for row in 0..h {
@@ -637,6 +676,9 @@ fn layer_json(l: &Layer) -> Json {
         "blend": l.blend.name(),
         "locked": l.locked,
         "lock_alpha": l.lock_alpha,
+        "parent": l.parent.map(|p| p.to_string()),
+        "clip": l.clip,
+        "expanded": l.expanded,
         "tiles": l.tiles.len(),
     })
 }
@@ -650,21 +692,48 @@ fn edit(d: &mut Document, cmd: &Command, pressure_curve: &Curve) -> Result<(), E
                 .name
                 .clone()
                 .unwrap_or_else(|| format!("Layer {}", p.layer.0));
-            d.add_layer(Layer::new(p.layer, name, kind), p.above)?;
+            let layer = Layer::new(p.layer, name, kind);
+            match (p.above, p.into) {
+                (_, None) => d.add_layer(layer, p.above)?,
+                (None, Some(f)) => d.add_layer_into(layer, f)?,
+                (Some(_), Some(_)) => {
+                    return Err(ExecError(
+                        "layer.new takes above=… or into=…, not both".into(),
+                    ));
+                }
+            }
         }
+        Command::LayerGroup(p) => {
+            let name = p
+                .name
+                .clone()
+                .unwrap_or_else(|| format!("Folder {}", p.folder.0));
+            d.group(Layer::new(p.folder, name, LayerKind::Folder), p.layer)?;
+        }
+        Command::LayerUngroup(p) => d.ungroup(p.folder)?,
         Command::LayerDelete(p) => {
             d.remove_layer(p.layer)?;
         }
-        Command::LayerMove(p) => match (p.above, p.to) {
-            (Some(a), None) => d.move_layer(p.layer, Some(a))?,
-            (None, Some(Place::Bottom)) => d.move_layer(p.layer, None)?,
-            (None, Some(Place::Top)) => {
-                let top = d.layers().last().map(|l| l.id);
-                d.move_layer(p.layer, top)?;
+        Command::LayerMove(p) => match (p.above, p.to, p.into) {
+            (Some(a), None, None) => d.move_layer(p.layer, Some(a))?,
+            (None, None, Some(f)) => d.move_into(p.layer, f)?,
+            (None, Some(Place::Bottom), None) => d.move_layer(p.layer, None)?,
+            (None, Some(Place::Top), None) => {
+                // Above the topmost top-level layer (a folder's entry is its topmost layer).
+                let top = d
+                    .layers()
+                    .iter()
+                    .rev()
+                    .find(|l| l.parent.is_none() && l.id != p.layer)
+                    .map(|l| l.id);
+                match top {
+                    Some(t) => d.move_layer(p.layer, Some(t))?,
+                    None => d.move_layer(p.layer, None)?,
+                }
             }
             _ => {
                 return Err(ExecError(
-                    "layer.move needs exactly one of above=… or to=…".into(),
+                    "layer.move needs exactly one of above=…, into=… or to=…".into(),
                 ));
             }
         },
@@ -673,12 +742,14 @@ fn edit(d: &mut Document, cmd: &Command, pressure_curve: &Curve) -> Result<(), E
                 && p.name.is_none()
                 && p.opacity.is_none()
                 && p.blend.is_none()
-                && p.lock_alpha.is_none();
+                && p.lock_alpha.is_none()
+                && p.clip.is_none();
             if p.name.is_none()
                 && p.opacity.is_none()
                 && p.blend.is_none()
                 && p.locked.is_none()
                 && p.lock_alpha.is_none()
+                && p.clip.is_none()
             {
                 return Err(ExecError("layer.set needs at least one property".into()));
             }
@@ -698,7 +769,13 @@ fn edit(d: &mut Document, cmd: &Command, pressure_curve: &Curve) -> Result<(), E
                 l.opacity = v;
             }
             if let Some(v) = p.blend {
+                if v == BlendMode::Through && !l.is_folder() {
+                    return Err(DocError::ThroughOnRaster(p.layer).into());
+                }
                 l.blend = v;
+            }
+            if let Some(v) = p.clip {
+                l.clip = v;
             }
             if let Some(v) = p.locked {
                 l.locked = v;
@@ -725,6 +802,9 @@ fn edit(d: &mut Document, cmd: &Command, pressure_curve: &Curve) -> Result<(), E
             let l = d.layer_mut(p.layer)?;
             if l.locked {
                 return Err(DocError::LayerLocked(p.layer).into());
+            }
+            if l.is_folder() {
+                return Err(ExecError(format!("{}: can't paint on a folder", p.layer)));
             }
             brushye_core::brush::stroke(l, bounds, &settings, &p.samples.0)
                 .map_err(|e| ExecError(e.to_string()))?;

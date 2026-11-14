@@ -26,7 +26,8 @@ New layer with a caller-chosen id.
 | `layer` | layer id | positional | Id for the new layer (must be unused) |
 | `kind` | layer kind | optional `key=` | Layer kind (default raster) |
 | `name` | string | optional `key=` | Name (default "Layer <n>") |
-| `above` | layer id | optional `key=` | Insert directly above this layer (default: on top) |
+| `above` | layer id | optional `key=` | Insert directly above this layer, in its folder (default: on top) |
+| `into` | layer id | optional `key=` | Insert at the top of this folder (instead of above=) |
 
 ### `layer.delete` (v1, undoable)
 Delete a layer.
@@ -41,8 +42,9 @@ Move a layer above another layer, or to the top or bottom.
 | Parameter | Kind | Form | Description |
 |---|---|---|---|
 | `layer` | layer id | positional | Layer to move |
-| `above` | layer id | optional `key=` | Place directly above this layer |
-| `to` | place (top\|bottom) | optional `key=` | top or bottom |
+| `above` | layer id | optional `key=` | Place directly above this layer, in its folder |
+| `to` | place (top\|bottom) | optional `key=` | top or bottom (of the whole stack, top level) |
+| `into` | layer id | optional `key=` | Place at the top of this folder |
 
 ### `layer.set` (v1, undoable)
 Set layer properties (name, opacity, blend, locks).
@@ -52,9 +54,10 @@ Set layer properties (name, opacity, blend, locks).
 | `layer` | layer id | positional | Target layer |
 | `name` | string | optional `key=` | Name |
 | `opacity` | u8 | optional `key=` | Opacity in percent, 0..=100 |
-| `blend` | blend mode | optional `key=` | Blending mode |
+| `blend` | blend mode | optional `key=` | Blending mode (through: folders only) |
 | `locked` | bool | optional `key=` | Lock layer |
 | `lock_alpha` | bool | optional `key=` | Lock transparent pixels |
+| `clip` | bool | optional `key=` | Clip to Layer Below |
 
 ### `layer.fill` (v1, undoable)
 Fill a layer with one colour.
@@ -104,6 +107,22 @@ Paint one brush stroke from input samples.
 | `density_curve` | curve points [x,y;…] | optional `key=` | Density pressure curve points [x,y;…] |
 | `samples` | stroke samples | required `key=` | Input samples (b64:… or [x,y,p,t;…]) |
 
+### `layer.group` (v1, undoable)
+Put a layer in a new folder (Ctrl+G).
+
+| Parameter | Kind | Form | Description |
+|---|---|---|---|
+| `folder` | layer id | positional | Id for the new folder (must be unused) |
+| `layer` | layer id | required `key=` | Layer to put in the folder |
+| `name` | string | optional `key=` | Folder name (default "Folder <n>") |
+
+### `layer.ungroup` (v1, undoable)
+Remove a folder, keeping its contents.
+
+| Parameter | Kind | Form | Description |
+|---|---|---|---|
+| `folder` | layer id | positional | Folder to ungroup |
+
 ### `layer.show` (v1, appstate)
 Show or hide a layer (not undoable, as in CSP).
 
@@ -111,6 +130,14 @@ Show or hide a layer (not undoable, as in CSP).
 |---|---|---|---|
 | `layer` | layer id | positional | Target layer |
 | `visible` | bool | required `key=` | Visible |
+
+### `layer.expand` (v1, appstate)
+Open or close a folder in the Layer palette.
+
+| Parameter | Kind | Form | Description |
+|---|---|---|---|
+| `folder` | layer id | positional | Folder |
+| `open` | bool | required `key=` | Open (true) or closed (false) |
 
 ### `layer.select` (v1, appstate)
 Make a layer the active layer.

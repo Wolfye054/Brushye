@@ -491,6 +491,7 @@ fn set_cmd(id: LayerId) -> commands::LayerSet {
         blend: None,
         locked: None,
         lock_alpha: None,
+        clip: None,
     }
 }
 
@@ -777,6 +778,7 @@ fn layers(app: &mut App, ui: &mut Ui, c: &Colors, body: Rect) {
                 layer: id,
                 above: Some(target),
                 to: None,
+                into: None,
             }));
         }
     }

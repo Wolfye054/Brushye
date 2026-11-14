@@ -124,7 +124,8 @@ params! {
         layer: LayerId = pos "Id for the new layer (must be unused)",
         kind: Option<LayerKind> = opt "Layer kind (default raster)",
         name: Option<String> = opt "Name (default \"Layer <n>\")",
-        above: Option<LayerId> = opt "Insert directly above this layer (default: on top)",
+        above: Option<LayerId> = opt "Insert directly above this layer, in its folder (default: on top)",
+        into: Option<LayerId> = opt "Insert at the top of this folder (instead of above=)",
     }
 }
 params! {
@@ -137,8 +138,9 @@ params! {
     /// Move a layer: directly above another layer, or to the top/bottom.
     pub struct LayerMove {
         layer: LayerId = pos "Layer to move",
-        above: Option<LayerId> = opt "Place directly above this layer",
-        to: Option<Place> = opt "top or bottom",
+        above: Option<LayerId> = opt "Place directly above this layer, in its folder",
+        to: Option<Place> = opt "top or bottom (of the whole stack, top level)",
+        into: Option<LayerId> = opt "Place at the top of this folder",
     }
 }
 params! {
@@ -147,9 +149,32 @@ params! {
         layer: LayerId = pos "Target layer",
         name: Option<String> = opt "Name",
         opacity: Option<u8> = opt "Opacity in percent, 0..=100",
-        blend: Option<BlendMode> = opt "Blending mode",
+        blend: Option<BlendMode> = opt "Blending mode (through: folders only)",
         locked: Option<bool> = opt "Lock layer",
         lock_alpha: Option<bool> = opt "Lock transparent pixels",
+        clip: Option<bool> = opt "Clip to Layer Below",
+    }
+}
+params! {
+    /// Wrap a layer (a folder with its contents) in a new folder that takes its place
+    /// (Create folder and insert layer, Ctrl+G).
+    pub struct LayerGroup {
+        folder: LayerId = pos "Id for the new folder (must be unused)",
+        layer: LayerId = key "Layer to put in the folder",
+        name: Option<String> = opt "Folder name (default \"Folder <n>\")",
+    }
+}
+params! {
+    /// Remove a folder and leave its contents in its place (Ungroup Layer Folder).
+    pub struct LayerUngroup {
+        folder: LayerId = pos "Folder to ungroup",
+    }
+}
+params! {
+    /// Open or close a folder in the Layer palette (journaled, not undoable: H-002).
+    pub struct LayerExpand {
+        folder: LayerId = pos "Folder",
+        open: bool = key "Open (true) or closed (false)",
     }
 }
 params! {
@@ -562,7 +587,10 @@ registry! {
         LayerFill(LayerFill) = "layer.fill" v 1 Undoable "Fill a layer with one colour",
         LayerPixels(LayerPixels) = "layer.pixels" v 1 Undoable "Write raw RGBA pixels into a layer",
         BrushStroke(BrushStroke) = "brush.stroke" v 1 Undoable "Paint one brush stroke from input samples",
+        LayerGroup(LayerGroup) = "layer.group" v 1 Undoable "Put a layer in a new folder (Ctrl+G)",
+        LayerUngroup(LayerUngroup) = "layer.ungroup" v 1 Undoable "Remove a folder, keeping its contents",
         LayerShow(LayerShow) = "layer.show" v 1 AppState "Show or hide a layer (not undoable, as in CSP)",
+        LayerExpand(LayerExpand) = "layer.expand" v 1 AppState "Open or close a folder in the Layer palette",
         LayerSelect(LayerSelect) = "layer.select" v 1 AppState "Make a layer the active layer",
         InputPressureCurve(InputPressureCurve) = "input.pressure_curve" v 1 AppState "Set the global pen pressure adjustment curve",
         ToolSelect(ToolSelect) = "tool.select" v 1 Tool "Select a tool",
