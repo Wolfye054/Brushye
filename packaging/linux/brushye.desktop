@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Brushye
+GenericName=Painting program
+Comment=Painting, illustration and comics
+Exec=brushye-app %f
+Icon=brushye
+Terminal=false
+Categories=Graphics;2DGraphics;RasterGraphics;
+Keywords=paint;draw;illustration;comics;
