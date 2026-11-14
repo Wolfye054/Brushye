@@ -43,7 +43,8 @@ const USAGE: &str = "usage:
                                           save a user brush (brush.stroke settings)
   brushye brush show FILE.brshbrush       print a brush and its brush.stroke settings
   brushye brush list DIR                  list a brush library folder
-  brushye commands                        print the command/query registry
+  brushye commands [--markdown]           print the command/query registry (JSON, or the
+                                          Markdown reference in docs/commands.md)
   brushye --version";
 
 fn read_input(path: &str) -> Result<String, String> {
@@ -395,6 +396,10 @@ fn real_main(args: &[String]) -> Result<(), Fail> {
         }
         Some("--help" | "-h") | None => {
             println!("{USAGE}");
+            Ok(())
+        }
+        Some("commands") if args.get(1).map(String::as_str) == Some("--markdown") => {
+            print!("{}", brushye_command::commands::reference_markdown());
             Ok(())
         }
         Some("commands") => {

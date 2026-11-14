@@ -247,3 +247,26 @@ fn user_brushes_save_show_and_list() {
     assert!(lines[1].contains("Soft round"), "{out}");
     let _ = std::fs::remove_dir_all(&d);
 }
+
+/// docs/commands.md is the generated reference; regenerate with
+/// `brushye commands --markdown > docs/commands.md` when commands change.
+#[test]
+fn command_reference_is_current() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/commands.md");
+    let committed = std::fs::read_to_string(&path).unwrap_or_default();
+    let (code, out, err) = brushye(&["commands", "--markdown"], None);
+    assert_eq!(code, 0, "{err}");
+    assert!(
+        committed.replace("\r\n", "\n") == out,
+        "docs/commands.md is out of date: run `cargo run -p brushye-cli -- commands --markdown > docs/commands.md`"
+    );
+    // Every command and query is documented.
+    for name in [
+        "brush.stroke",
+        "layer.new",
+        "input.pressure_curve",
+        "?doc.hash",
+    ] {
+        assert!(out.contains(&format!("`{name}`")), "{name}");
+    }
+}

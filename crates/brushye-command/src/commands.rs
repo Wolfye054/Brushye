@@ -423,6 +423,54 @@ pub fn registry_json() -> Json {
     })
 }
 
+/// The command reference as Markdown (`docs/commands.md`, `brushye commands --markdown`).
+pub fn reference_markdown() -> String {
+    let mut out = String::from(
+        "# Brushye command reference\n\nGenerated from the command registry by `brushye commands --markdown`; a test keeps this\nfile current. Syntax: `docs/command-format.md`. Classes: **session** starts a new document\nand history, **undoable** is one undo step, **appstate** is journaled but not undoable,\n**history** is undo/redo.\n",
+    );
+    let table = |out: &mut String, s: &Spec| {
+        if s.params.is_empty() {
+            out.push_str("No parameters.\n");
+            return;
+        }
+        out.push_str("| Parameter | Kind | Form | Description |\n|---|---|---|---|\n");
+        for p in s.params {
+            let form = match p.mode {
+                Mode::Pos => "positional",
+                Mode::Key => "required `key=`",
+                Mode::Opt => "optional `key=`",
+            };
+            out.push_str(&format!(
+                "| `{}` | {} | {} | {} |\n",
+                p.name,
+                p.kind.replace('|', "\\|"),
+                form,
+                p.doc.replace('|', "\\|")
+            ));
+        }
+    };
+    out.push_str("\n## Commands\n");
+    for s in COMMANDS {
+        let class = s
+            .class
+            .map(|c| format!("{c:?}").to_lowercase())
+            .unwrap_or_default();
+        out.push_str(&format!(
+            "\n### `{}` (v{}, {class})\n{}.\n\n",
+            s.name, s.version, s.doc
+        ));
+        table(&mut out, s);
+    }
+    out.push_str(
+        "\n## Queries\nQueries start with `?` and return JSON; they never change state.\n",
+    );
+    for s in QUERIES {
+        out.push_str(&format!("\n### `?{}`\n{}.\n\n", s.name, s.doc));
+        table(&mut out, s);
+    }
+    out
+}
+
 /// A migration step: rewrites a line from `from` to `from + 1` for one command.
 pub type Migration = (&'static str, u32, fn(RawLine) -> Result<RawLine, String>);
 
