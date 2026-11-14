@@ -169,14 +169,14 @@ impl BrushSettings {
         if self.stabilization > MAX_STABILIZATION {
             return bad(format!("stabilization must be 0..={MAX_STABILIZATION}"));
         }
-        if let Gap::Fixed(v) = self.gap {
-            if !FIXED_GAP_RANGE.contains(&v) {
-                return bad(format!(
-                    "fixed gap must be {}..={} % of size",
-                    FIXED_GAP_RANGE.start(),
-                    FIXED_GAP_RANGE.end()
-                ));
-            }
+        if let Gap::Fixed(v) = self.gap
+            && !FIXED_GAP_RANGE.contains(&v)
+        {
+            return bad(format!(
+                "fixed gap must be {}..={} % of size",
+                FIXED_GAP_RANGE.start(),
+                FIXED_GAP_RANGE.end()
+            ));
         }
         for d in [
             &self.size_pressure,

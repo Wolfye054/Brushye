@@ -429,7 +429,7 @@ crates/
 | `serde`, `serde_json` | document.json, query results, JSON command form | De facto standard; derives avoid hand-written codecs |
 | `schemars` | schemas generated from typed command params (D-011) | Keeps the MCP schema and UI forms in sync with the param structs |
 | `png` | PNG import/export, `preview.png` | Pure Rust, exact control over chunks (strip/write ICC deterministically) |
-| `zip` | .brsh / .brshbrush container (D-014) | Pure Rust, mature. Pinned at `=7.3.0` with only the `deflate` feature (M5; zip 9 needs Rust 1.88, above our MSRV 1.85). **Version pinned exactly** (the crate had a turbulent maintainer change and yanked releases in 2024); bumps are reviewed. Fallback: our own minimal stored-only ZIP code |
+| `zip` | .brsh / .brshbrush container (D-014) | Pure Rust, mature. Pinned at `=9.5.1` with only the `deflate` feature (M5). 7.x has extraction advisories (RUSTSEC-2026-0367/0368/0369/0429; Brushye never extracts to disk, but the fixed version is used); zip 9 needs Rust 1.88, so the workspace MSRV moved from 1.85 to 1.88. **Version pinned exactly** (the crate had a turbulent maintainer change and yanked releases in 2024); bumps are reviewed. Fallback: our own minimal stored-only ZIP code |
 | `zstd` | .brsh tile compression (D-014) | Best speed/ratio for save and autosave. The **one C dependency** (builds libzstd via `cc`), accepted for that reason; pure-Rust fallback: `lz4_flex` |
 | `base64` | stroke sample blobs (D-011) | Small and standard |
 | `libm` | deterministic transcendental functions (D-012) | Platform libm differs between OSes |

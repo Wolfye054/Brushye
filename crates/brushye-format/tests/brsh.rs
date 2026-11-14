@@ -145,7 +145,7 @@ fn entries(bytes: &[u8]) -> Entries {
         let mut f = za.by_index(i).unwrap_or_else(|e| panic!("{e}"));
         let mut v = Vec::new();
         std::io::Read::read_to_end(&mut f, &mut v).unwrap_or_else(|e| panic!("{e}"));
-        out.insert(f.name().to_owned(), v);
+        out.insert(f.name().unwrap_or_else(|e| panic!("{e}")).into_owned(), v);
     }
     out
 }

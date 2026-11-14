@@ -84,10 +84,10 @@ impl TileCache {
         tile: &Arc<Tile>,
     ) -> Result<Arc<[u8]>, BrshError> {
         let key = (layer.0, c.0, c.1);
-        if let Some((w, bytes)) = self.map.get(&key) {
-            if w.upgrade().is_some_and(|t| Arc::ptr_eq(&t, tile)) {
-                return Ok(bytes.clone());
-            }
+        if let Some((w, bytes)) = self.map.get(&key)
+            && w.upgrade().is_some_and(|t| Arc::ptr_eq(&t, tile))
+        {
+            return Ok(bytes.clone());
         }
         let bytes: Arc<[u8]> = zstd::bulk::compress(&tile.px, ZSTD_LEVEL)
             .map_err(err)?
@@ -324,7 +324,7 @@ fn read_entries(bytes: &[u8]) -> Result<Entries, BrshError> {
         if f.is_dir() {
             continue;
         }
-        let name = f.name().to_owned();
+        let name = f.name().map_err(err)?.into_owned();
         let limit = if name.ends_with(".zst") || name.ends_with(".png") {
             // Stored entries; size is bounded by the archive itself.
             bytes.len() as u64
@@ -574,12 +574,12 @@ pub fn load(bytes: &[u8], strict: bool) -> Result<Loaded, BrshError> {
         layer.tiles.prune();
         doc.add_layer(layer, None).map_err(err)?;
     }
-    if let Some(a) = active {
-        if doc.layer(a).is_none() {
-            return Err(err(format!(
-                "document.json: active layer {a} does not exist"
-            )));
-        }
+    if let Some(a) = active
+        && doc.layer(a).is_none()
+    {
+        return Err(err(format!(
+            "document.json: active layer {a} does not exist"
+        )));
     }
     let journal = match e.get("journal.bcmd") {
         Some(j) => {
@@ -619,7 +619,7 @@ pub fn list_entries(bytes: &[u8]) -> Result<Vec<(String, u64, u64, String)>, Brs
     for i in 0..za.len() {
         let f = za.by_index_raw(i).map_err(err)?;
         out.push((
-            f.name().to_owned(),
+            f.name().map_err(err)?.into_owned(),
             f.compressed_size(),
             f.size(),
             format!("{:?}", f.compression()),

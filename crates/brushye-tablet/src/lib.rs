@@ -155,12 +155,11 @@ impl Shared {
                 any = true;
             }
         }
-        if any {
-            if let Ok(w) = self.waker.lock() {
-                if let Some(w) = w.as_ref() {
-                    w();
-                }
-            }
+        if any
+            && let Ok(w) = self.waker.lock()
+            && let Some(w) = w.as_ref()
+        {
+            w();
         }
     }
 

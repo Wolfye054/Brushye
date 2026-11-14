@@ -33,7 +33,7 @@ pub fn flatten(doc: &Document) -> Image {
     let (w, h) = (doc.width as usize, doc.height as usize);
     let mut px = vec![0u8; w * h * 4];
     if let Some(p) = doc.paper {
-        for c in px.chunks_exact_mut(4) {
+        for c in px.as_chunks_mut::<4>().0 {
             c.copy_from_slice(&p.0);
         }
     }

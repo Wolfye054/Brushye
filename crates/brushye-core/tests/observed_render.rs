@@ -73,7 +73,7 @@ fn source_alpha_documents_render_exactly() {
         let obs = Img::load(&format!("observed/alpha_{nn:02}_{}.png", m.name()));
         let (n, exact, max) = count_exact(&img, &obs, |y| y, 3);
         assert_eq!((exact, max), (n, 0), "{}", m.name());
-        assert!(img.px.chunks_exact(4).all(|p| p[3] == 255));
+        assert!(img.px.as_chunks::<4>().0.iter().all(|p| p[3] == 255));
     }
 }
 
@@ -149,8 +149,10 @@ fn paper_hidden_layers_and_canvas_clipping() {
     assert!(
         flatten(&d)
             .px
-            .chunks_exact(4)
-            .all(|p| p == [255, 255, 255, 255])
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .all(|p| *p == [255, 255, 255, 255])
     );
     // No paper and no layers: fully transparent.
     let empty = Document::new(4, 4, 72, None).unwrap_or_else(|e| panic!("{e}"));

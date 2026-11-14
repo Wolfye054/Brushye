@@ -398,11 +398,11 @@ fn migration_engine_runs_the_chain() {
     fn v2_to_v3(mut r: RawLine) -> Result<RawLine, String> {
         // v3 takes opacity in percent instead of 0..1
         for (k, v) in &mut r.named {
-            if k == "opacity" {
-                if let Value::Num(n) = v {
-                    let pct = (n.parse::<f64>().map_err(|e| e.to_string())? * 100.0).round();
-                    *v = Value::Num(format!("{pct}"));
-                }
+            if k == "opacity"
+                && let Value::Num(n) = v
+            {
+                let pct = (n.parse::<f64>().map_err(|e| e.to_string())? * 100.0).round();
+                *v = Value::Num(format!("{pct}"));
             }
         }
         Ok(r)

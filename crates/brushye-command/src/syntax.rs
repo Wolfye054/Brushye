@@ -375,16 +375,16 @@ pub fn parse_line(line: &str) -> Result<Line, SyntaxError> {
         // key=value?
         let save = c.i;
         if c.peek().is_some_and(is_word_start) {
-            if let Ok(key) = c.dotted(true) {
-                if c.eat('=') {
-                    let v = c.value()?;
-                    if raw.named.iter().any(|(k, _)| *k == key) {
-                        c.i = save;
-                        return c.err(format!("duplicate key '{key}'"));
-                    }
-                    raw.named.push((key, v));
-                    continue;
+            if let Ok(key) = c.dotted(true)
+                && c.eat('=')
+            {
+                let v = c.value()?;
+                if raw.named.iter().any(|(k, _)| *k == key) {
+                    c.i = save;
+                    return c.err(format!("duplicate key '{key}'"));
                 }
+                raw.named.push((key, v));
+                continue;
             }
             c.i = save;
         }

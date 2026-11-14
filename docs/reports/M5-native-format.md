@@ -49,9 +49,13 @@
   bad active layer, wrong format ids and non-ZIP input.
 
 ## Dependencies
-`zip` pinned at `=7.3.0` with only the pure-Rust `deflate` feature (zip 9 needs Rust 1.88,
-above our MSRV); `zstd` 0.14 (the one C library, as approved in D-016). All licenses are on the
-cargo-deny allow list.
+`zip` pinned at `=9.5.1` with only the pure-Rust `deflate` feature, and `zstd` 0.14, the one C
+library approved in D-016. All licenses are on the cargo-deny allow list.
+
+- zip 7.3 had four advisories, all in `ZipArchive::extract`, which Brushye never calls (it reads
+  entries into memory). cargo-deny caught them in CI, and the fixed 9.x line is used instead.
+- zip 9 needs Rust 1.88, so the **workspace MSRV moved from 1.85 to 1.88**. CI builds on stable,
+  and 1.88 is over a year old.
 
 ## Design notes to confirm
 - **Opening a file is not a command.** A journal that continues a document records the base

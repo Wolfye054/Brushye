@@ -315,10 +315,10 @@ impl Session {
 
     /// The active layer must exist in the current version (it may not after undo/redo).
     fn fix_active(&mut self) {
-        if let (Some(a), Some(d)) = (self.active, self.steps.get(self.pos)) {
-            if d.doc.layer(a).is_none() {
-                self.active = None;
-            }
+        if let (Some(a), Some(d)) = (self.active, self.steps.get(self.pos))
+            && d.doc.layer(a).is_none()
+        {
+            self.active = None;
         }
     }
 
@@ -630,10 +630,10 @@ fn edit(d: &mut Document, cmd: &Command) -> Result<(), ExecError> {
             {
                 return Err(ExecError("layer.set needs at least one property".into()));
             }
-            if let Some(o) = p.opacity {
-                if o > 100 {
-                    return Err(DocError::OpacityOutOfRange(u32::from(o)).into());
-                }
+            if let Some(o) = p.opacity
+                && o > 100
+            {
+                return Err(DocError::OpacityOutOfRange(u32::from(o)).into());
             }
             let l = d.layer_mut(p.layer)?;
             if l.locked && !only_unlock {

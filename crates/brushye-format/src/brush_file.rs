@@ -92,7 +92,7 @@ pub fn load(bytes: &[u8], strict: bool) -> Result<(BrushFile, Vec<String>), Brus
         if f.is_dir() {
             continue;
         }
-        let name = f.name().to_owned();
+        let name = f.name().map_err(err)?.into_owned();
         let mut data = Vec::new();
         f.take(MAX_ENTRY + 1).read_to_end(&mut data).map_err(err)?;
         if data.len() as u64 > MAX_ENTRY {
