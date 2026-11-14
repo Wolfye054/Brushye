@@ -206,11 +206,33 @@ impl ToolId {
     }
 }
 
-/// One sub tool: a named brush preset.
+/// One sub tool: a named brush preset, plus how it shows in the palettes (U-010, U-011).
 #[derive(Clone, Debug, PartialEq)]
 pub struct SubTool {
     pub name: String,
     pub preset: BrushPreset,
+    /// Row keys shown in Tool property (the Sub Tool Detail eye buttons).
+    pub shown: Vec<String>,
+    /// Locked: edits work but aren't kept; the sub tool reverts to `base` when deselected.
+    pub base: Option<BrushPreset>,
+    /// "Save as default": what Reset to default restores (else the built-in default).
+    pub user_default: Option<BrushPreset>,
+}
+
+impl SubTool {
+    pub fn new(tool: ToolId, name: &str, preset: BrushPreset) -> Self {
+        Self {
+            name: name.into(),
+            preset,
+            shown: super::rows::default_shown(tool),
+            base: None,
+            user_default: None,
+        }
+    }
+
+    pub fn locked(&self) -> bool {
+        self.base.is_some()
+    }
 }
 
 /// A group tab of sub tools (U-004: e.g. two groups for the Pen tool).
@@ -265,19 +287,26 @@ fn preset(text: &str) -> BrushPreset {
     })
 }
 
-fn group(name: &str, icon: &'static str, items: &[(&str, &str)]) -> SubToolGroup {
+fn group(tool: ToolId, name: &str, icon: &'static str, items: &[(&str, &str)]) -> SubToolGroup {
     SubToolGroup {
         name: name.into(),
         icon,
         items: items
             .iter()
-            .map(|(n, p)| SubTool {
-                name: (*n).into(),
-                preset: preset(p),
-            })
+            .map(|(n, p)| SubTool::new(tool, n, preset(p)))
             .collect(),
         selected: 0,
     }
+}
+
+/// The built-in default of a sub tool, found by name.
+pub fn builtin_default(tool: ToolId, name: &str) -> Option<BrushPreset> {
+    default_set(tool)?
+        .groups
+        .into_iter()
+        .flat_map(|g| g.items)
+        .find(|s| s.name == name)
+        .map(|s| s.preset)
 }
 
 /// Brushye's own default sub tools (original names and settings).
@@ -285,6 +314,7 @@ pub fn default_set(tool: ToolId) -> Option<ToolSet> {
     let groups = match tool {
         ToolId::Pen => vec![
             group(
+                tool,
                 "Pen",
                 icons::PEN_NIB,
                 &[
@@ -298,6 +328,7 @@ pub fn default_set(tool: ToolId) -> Option<ToolSet> {
                 ],
             ),
             group(
+                tool,
                 "Marker",
                 icons::HIGHLIGHTER,
                 &[
@@ -308,6 +339,7 @@ pub fn default_set(tool: ToolId) -> Option<ToolSet> {
             ),
         ],
         ToolId::Pencil => vec![group(
+            tool,
             "Pencil",
             icons::PENCIL_SIMPLE,
             &[
@@ -326,6 +358,7 @@ pub fn default_set(tool: ToolId) -> Option<ToolSet> {
             ],
         )],
         ToolId::Brush => vec![group(
+            tool,
             "Brush",
             icons::PAINT_BRUSH,
             &[
@@ -345,6 +378,7 @@ pub fn default_set(tool: ToolId) -> Option<ToolSet> {
             ],
         )],
         ToolId::Airbrush => vec![group(
+            tool,
             "Airbrush",
             icons::SPRAY_BOTTLE,
             &[
@@ -359,6 +393,7 @@ pub fn default_set(tool: ToolId) -> Option<ToolSet> {
             ],
         )],
         ToolId::Eraser => vec![group(
+            tool,
             "Eraser",
             icons::ERASER,
             &[
@@ -387,7 +422,14 @@ pub fn to_json(set: &ToolSet) -> Json {
         "groups": set.groups.iter().map(|g| json!({
             "name": g.name,
             "selected": g.selected,
-            "items": g.items.iter().map(|s| json!({"name": s.name, "settings": s.preset.to_json()})).collect::<Vec<_>>(),
+            "items": g.items.iter().map(|s| json!({
+                "name": s.name,
+                // A locked sub tool saves its locked settings, not the edits (U-010).
+                "settings": s.base.as_ref().unwrap_or(&s.preset).to_json(),
+                "shown": s.shown,
+                "locked": s.locked(),
+                "default": s.user_default.as_ref().map(|p| p.to_json()),
+            })).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
     })
 }
@@ -402,10 +444,22 @@ pub fn from_json(tool: ToolId, j: &Json) -> Option<ToolSet> {
             .as_array()?
             .iter()
             .filter_map(|s| {
-                Some(SubTool {
-                    name: s["name"].as_str()?.to_owned(),
-                    preset: BrushPreset::from_json(s["settings"].as_object()?).ok()?,
-                })
+                let preset = BrushPreset::from_json(s["settings"].as_object()?).ok()?;
+                let name = s["name"].as_str()?;
+                let mut st = SubTool::new(tool, name, preset);
+                if let Some(a) = s["shown"].as_array() {
+                    st.shown = a
+                        .iter()
+                        .filter_map(|v| v.as_str().map(str::to_owned))
+                        .collect();
+                }
+                if s["locked"].as_bool() == Some(true) {
+                    st.base = Some(st.preset.clone());
+                }
+                st.user_default = s["default"]
+                    .as_object()
+                    .and_then(|d| BrushPreset::from_json(d).ok());
+                Some(st)
             })
             .collect();
         let icon = defaults.groups.get(i).map_or(info(tool).icon, |d| d.icon);

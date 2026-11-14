@@ -1,6 +1,8 @@
-//! A pressure curve editor: a square graph with the curve (as the engine evaluates it) and its
-//! interior control points. Drag a point to move it, click empty space to add one, right-click
-//! a point to remove it. The end points (0,0) and (1,1) are fixed.
+//! A pressure curve editor drawn like CSP's dynamics graph (spec U-010): a 4×4 grid, control
+//! points as small blue squares, the curve (as the engine evaluates it) in white, and the
+//! control polygon when the curve isn't linear. Click empty space to add a point, drag to move
+//! it, drag it out of the graph (or right-click it) to remove it. The ends (0,0) and (1,1) are
+//! fixed.
 
 use brushye_command::core::brush::Curve;
 use eframe::egui;
@@ -70,6 +72,15 @@ pub fn curve_editor(
                 changed = true;
             }
         }
+        // Dragged out of the graph: the point is removed (U-010).
+        if let (Some(i), Some(q)) = (dragging, response.interact_pointer_pos())
+            && i < points.len()
+            && !rect.expand(6.0).contains(q)
+        {
+            points.remove(i);
+            dragging = None;
+            changed = true;
+        }
         if let Some(i) = dragging.filter(|&i| i < points.len()) {
             let p = to_curve(q);
             let lo = if i == 0 { 0.0 } else { points[i - 1][0] } + 0.005;
@@ -103,12 +114,29 @@ pub fn curve_editor(
             to_screen([x, curve.eval(x)])
         })
         .collect();
+    let blue = egui::Color32::from_rgb(80, 140, 230);
+    if !points.is_empty() {
+        let mut poly = vec![to_screen([0.0, 0.0])];
+        poly.extend(points.iter().map(|&p| to_screen(p)));
+        poly.push(to_screen([1.0, 1.0]));
+        painter.add(egui::Shape::line(poly, egui::Stroke::new(1.0, blue)));
+    }
     painter.add(egui::Shape::line(
         line,
-        egui::Stroke::new(2.0, visuals.selection.bg_fill),
+        egui::Stroke::new(1.5, egui::Color32::WHITE),
     ));
-    for &p in points.iter() {
-        painter.circle_filled(to_screen(p), 4.0, visuals.strong_text_color());
+    for (i, &p) in points.iter().enumerate() {
+        let col = if dragging == Some(i) {
+            egui::Color32::from_rgb(230, 60, 60)
+        } else {
+            blue
+        };
+        painter.rect_filled(
+            egui::Rect::from_center_size(to_screen(p), egui::vec2(6.0, 6.0)),
+            0.0,
+            col,
+        );
     }
+    response.on_hover_text("Specify output amount");
     changed
 }
