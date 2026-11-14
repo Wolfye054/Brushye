@@ -59,6 +59,23 @@ impl Gap {
             Gap::Fixed(v) => v,
         }
     }
+
+    /// Gap in percent of size for a tip of the given hardness level. The presets space soft
+    /// dabs further apart, by a factor per level (B-013); a fixed gap is never scaled.
+    pub fn percent_for(self, hardness: u8) -> f64 {
+        match self {
+            Gap::Fixed(v) => v,
+            preset => preset.percent() * soft_gap_factor(hardness),
+        }
+    }
+}
+
+/// Preset-gap factor per hardness level 1..=5 (B-013: stroke ink matches CSP's to < 0.5 % at
+/// levels 1–3 for all three presets; level 4 behaves like the hard tip).
+pub const SOFT_GAP_FACTORS: [f64; 5] = [3.0, 2.75, 2.0, 1.0, 1.0];
+
+fn soft_gap_factor(hardness: u8) -> f64 {
+    SOFT_GAP_FACTORS[usize::from(hardness.clamp(1, 5) - 1)]
 }
 
 /// Fixed gap range accepted, in percent of size (CSP's range is not known; 10–300 observed).
@@ -275,7 +292,7 @@ fn lattice(
         return (Vec::new(), 0);
     }
     let total = line.len();
-    let gap = s.gap.percent();
+    let gap = s.gap.percent_for(s.hardness);
     // Constant size: t_k = k·gap·size/100 computed directly (no accumulated rounding; B-002
     // shows ties at exact pixel boundaries resolve as exact arithmetic).
     let constant = s.size_pressure.is_none() && gap * s.size / 100.0 >= 1.0;

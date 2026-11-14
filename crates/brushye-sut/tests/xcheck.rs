@@ -1,8 +1,9 @@
 //! M8 exit check: strokes drawn with imported sub tools against CSP 1.13.2 strokes from the
 //! same sub tools (`specs/behavior/brush/B-012-sut-cross-check.md`).
 //!
-//! Results are pinned (B-012): hard tips match closely; soft-tip strokes and anti-aliased thin
-//! tips are known engine gaps. A pin that's beaten should be tightened.
+//! Results are pinned (B-012, B-013): hard tips and soft-tip spacing match closely; the soft-tip
+//! per-pixel profile and anti-aliased thin tips are known engine gaps. A pin that's beaten
+//! should be tightened.
 //!
 //! - `xcheck_presets.txt` holds what the importer makes of each X-xx.sut. With
 //!   `BRUSHYE_XCHECK_SUT` set to the samples folder (outside the repo, D-020) the test checks
@@ -175,16 +176,16 @@ fn importer_output_is_the_committed_presets() {
 const PINS: &[(&str, f64, f64)] = &[
     ("X-01", 3.5, 1.0),
     ("X-02", 1.0, 0.5),
-    ("X-03", 36.0, 7.0),  // soft tip in strokes (engine gap)
-    ("X-04", 95.0, 33.0), // soft tip in strokes (engine gap)
-    ("X-05", 20.0, 2.0),  // anti-aliased thin tip (engine gap)
-    ("X-06", 17.0, 1.0),  // anti-aliased thin tip (engine gap)
+    ("X-03", 33.0, 1.0), // soft tip: spacing fixed (B-013); per-pixel profile interim (B-009)
+    ("X-04", 1.0, 0.8),
+    ("X-05", 20.0, 2.0), // anti-aliased thin tip (engine gap)
+    ("X-06", 17.0, 1.0), // anti-aliased thin tip (engine gap)
     ("X-07", 2.0, 0.2),
     ("X-08", 4.5, 0.2),
     ("X-09", 1.5, 0.2),
     ("X-10", 2.2, 0.6),
     ("X-11", 3.2, 1.0),
-    ("X-12", 84.0, 29.0), // soft tip in strokes (engine gap)
+    ("X-12", 60.0, 0.8), // soft tip: spacing fixed (B-013); per-pixel profile interim (B-009)
 ];
 
 #[test]

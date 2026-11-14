@@ -1,5 +1,6 @@
 # B-012 .sut cross-check: imported sub tools against CSP strokes (M8 exit check)
-- Status: **observed**: import exact; engine gaps found (soft-tip strokes, anti-aliased thin tips)
+- Status: **observed**: import exact. Soft-tip spacing fixed by B-013. Anti-aliased thin tips
+  (B-014) and soft-tip profiles stay open.
 - CSP version: 1.13.2 (PRO, 64-bit, build 202301210208)
 - Date / method / observer: 2026-11-14 / automated-Wine + virtual stylus (D-003) / Claude
 - Samples: `~/brushye-samples/xcheck/` (D-020; registry there, with every step).
@@ -73,7 +74,12 @@ output is pinned in `crates/brushye-sut/tests/xcheck_presets.txt`.
    - X-06 likewise; its lone dab is excluded, because with Direction of line and no movement
      CSP takes the angle from the pen's ±0.1 px press nudge (looks Wine/vpen-specific).
 
-## Open
+## Update 2026-11-14
+- B-013's preset-gap factors for soft tips brought X-04 from 93 % to 0.6 % of pixels off. X-03
+  and X-12 now have their total ink within 0.7 % (some pixels still differ: profile).
+- B-014 found no exact thin-tip AA rule yet (X-05, X-06 unchanged).
+
+## Open (original list)
 - Observe soft-tip strokes: spacing and accumulation at hardness 1..4 and gap presets
   (B-009/B-002 follow-up).
 - Observe anti-aliased thin tips: AA Weak/Middle/Strong at several thicknesses (B-010
