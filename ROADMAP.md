@@ -93,11 +93,10 @@ size 8 (B-015).
   match CSP strokes from the same brush within brush-test tolerance.
 
 ## M9 — MCP server + scripting polish
-**Status (2026-11-14): in progress.** Done: the headless stdio server (`docs/mcp.md`), script
-examples (`examples/scripts/`), and the journal viewer (`brushye journal show`, Window > Journal).
-Attach mode (D-022) is in: File > Allow AI clients (MCP) and `brushye-mcp --attach`. Open:
-checks on native Windows and macOS, and the M9 report.
-- `brushye-mcp` exposing commands and queries; script examples; journal viewer.
+**Status (2026-11-14): done**, apart from the maintainer's native Windows/macOS check of
+attach mode. Report: `docs/reports/M9-mcp-server.md`.
+- `brushye-mcp` exposing commands and queries (headless, and attached to the running app,
+  D-022); script examples; journal viewer (CLI and app window).
 
 ## M10 — Post-alpha painting features
 - Folders + Through mode, clipping, masks, locks, selections, fill, gradient, transform,

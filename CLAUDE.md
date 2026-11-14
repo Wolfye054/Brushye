@@ -142,9 +142,10 @@ brushes) is done. M6 (app shell, GPU canvas display, live strokes, CSP 1.13.2 la
 the maintainer's pen test passed. M7 (brush editor + alpha polish) is done, including D-018
 (tool state as commands) and D-019 (native file dialogs); the maintainer tested it and
 v0.1.0-alpha is tagged. M8 (.sut import, crate brushye-sut) is done; open engine item: anti-aliased
-thin tips (B-014). D-021: before 1.0, brush fidelity fixes may change journal replay. M9 (MCP server) is in
-progress: the headless stdio server `brushye-mcp`, script examples, the journal viewer and attach
-mode (D-022: MCP clients drive the running app) are in. Left: Windows/macOS checks and the M9 report. New architectural decisions still
+thin tips (B-014). D-021: before 1.0, brush fidelity fixes may change journal replay. M9 (MCP server) is done
+(report `docs/reports/M9-mcp-server.md`): `brushye-mcp` (headless, and attach mode, D-022), script
+examples, journal viewer; the maintainer's native Windows/macOS check of attach mode is pending.
+Next (proposed): M10 part 1, layer structure (folders/Through, clipping, masks), proposal first. New architectural decisions still
 need maintainer approval first (see Working agreement). Never copy code from the maintainer's
 other projects (photocraft, clipcraft); design ideas only.
 
