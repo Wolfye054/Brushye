@@ -1,5 +1,6 @@
 //! The 28 raster-layer blending modes of CSP 1.13.2, in its dropdown order (spec L-001),
-//! and their math (`math`, DECISIONS D-017).
+//! and their math (`math`, DECISIONS D-017), plus **Through**, the folder-only pass-through
+//! mode (L-004), which is first in CSP's list for folders and isn't a blend function.
 
 pub mod math;
 
@@ -8,16 +9,19 @@ macro_rules! blend_modes {
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
         pub enum BlendMode {
             #[default]
-            $($v),*
+            $($v,)*
+            /// Folders only (L-004): the children blend straight into the backdrop.
+            Through,
         }
         impl BlendMode {
+            /// The 28 raster blending modes (not `Through`).
             pub const ALL: &'static [BlendMode] = &[$(BlendMode::$v),*];
             /// Command-syntax name (an enum word, e.g. `color_dodge`).
             pub fn name(self) -> &'static str {
-                match self { $(BlendMode::$v => $name),* }
+                match self { $(BlendMode::$v => $name,)* BlendMode::Through => "through" }
             }
             pub fn from_name(s: &str) -> Option<Self> {
-                match s { $($name => Some(BlendMode::$v),)* _ => None }
+                match s { $($name => Some(BlendMode::$v),)* "through" => Some(BlendMode::Through), _ => None }
             }
         }
     };

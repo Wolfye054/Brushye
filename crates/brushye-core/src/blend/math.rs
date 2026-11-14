@@ -71,7 +71,10 @@ pub fn blend_channel(mode: BlendMode, b: u8, s: u8) -> u8 {
     let (bi, si) = (i32::from(b), i32::from(s));
     let (bu, su) = (u32::from(b), u32::from(s));
     match mode {
+        // Through never reaches the blend math (folders render their children instead); it
+        // acts as Normal here so the function stays total.
         M::Normal
+        | M::Through
         | M::DarkerColor
         | M::LighterColor
         | M::Hue
@@ -219,7 +222,7 @@ pub fn out_alpha(mode: BlendMode, ab: u8, at: u8) -> u8 {
     use BlendMode as M;
     let (ab, at) = (u32::from(ab), u32::from(at));
     let v = match mode {
-        M::Normal => (ab * (32768 - a15(at as u8)) + 255 * a15(at as u8)) >> 15,
+        M::Normal | M::Through => (ab * (32768 - a15(at as u8)) + 255 * a15(at as u8)) >> 15,
         M::Screen | M::ColorDodge | M::GlowDodge | M::SoftLight | M::HardLight => {
             (at + ab).min(255)
         }
