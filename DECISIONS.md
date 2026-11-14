@@ -560,3 +560,20 @@ crates/
   2026-11-13). Setting
   `BRUSHYE_INAPP_DIALOGS=1` keeps the in-app path field (used for test displays without a
   portal).
+
+## D-020 .sut samples made by automated observation; kept outside the repo — ACCEPTED (2026-11-13)
+- **Date:** decided by the maintainer 2026-11-13 (M8 start).
+- **Decision:**
+  1. Claude makes the `.sut` sample files (study plan sets A and B) by driving the maintainer's
+     licensed CSP 1.13.2 under Wine/Xvfb. It uses only the UI, as for the behaviour
+     observations.
+  2. Every sample is a **new custom sub tool** made with "Create custom sub tool". None is
+     duplicated from, or exported from, a CSP default sub tool. Material-tip and texture samples
+     use images Claude draws for the purpose, never CSP materials.
+  3. These files count as files the maintainer created in CSP containing their own work
+     (CLAUDE.md fixtures rule). `specs/formats/samples.md` records each file's method
+     (automated-Wine), exact steps and SHA-256.
+  4. Samples stay **outside the public repo** (`~/brushye-samples/sut/`) until the format
+     study shows what the files contain. Committing them for CI tests is decided after that.
+- **Alternatives:** the maintainer makes all ~60 files by hand (slow), or the files are
+  committed from the start (risky before we know whether CSP embeds its own data in them).

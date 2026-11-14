@@ -37,6 +37,9 @@ Not allowed:
   Import code runs only on files the user supplies at runtime.
 - Test fixtures for CSP formats other than files the maintainer created in
   CSP, containing their own work
+  (files Claude makes by automated observation in the maintainer's CSP, from new
+  custom sub tools or documents and never from CSP's defaults or materials, count as the
+  maintainer's; DECISIONS D-020)
 
 Match behavior, workflow, layout and visuals (see the priority above; icons
 excepted). Don't speculate about how CSP
@@ -134,8 +137,8 @@ ink modes and pressure dynamics, built against two observation runs (open items 
 report). M5 (undo/redo fuzzing, the .brsh format and .brshbrush user
 brushes) is done. M6 (app shell, GPU canvas display, live strokes, CSP 1.13.2 layout and look) is done;
 the maintainer's pen test passed. M7 (brush editor + alpha polish) is done, including D-018
-(tool state as commands) and D-019 (native file dialogs); the alpha waits on the maintainer's
-test. New architectural decisions still
+(tool state as commands) and D-019 (native file dialogs); the maintainer tested it and
+v0.1.0-alpha is tagged. Now: M8 (.sut import), samples made by automated observation (D-020). New architectural decisions still
 need maintainer approval first (see Working agreement). Never copy code from the maintainer's
 other projects (photocraft, clipcraft); design ideas only.
 
