@@ -117,6 +117,18 @@ pub struct App {
     pub(crate) shown_title: String,
     pub(crate) settings: crate::settings::Settings,
     pub(crate) ui: UiState,
+    /// Autosave: time of the last snapshot (egui seconds) and its own tile cache.
+    autosaved_at: f64,
+    autosave_cache: TileCache,
+    /// Set when the document was recovered from an autosave ("<name>[Restore]", as in CSP).
+    restored: Option<String>,
+}
+
+/// Seconds between autosave snapshots while there are unsaved changes.
+const AUTOSAVE_SECS: f64 = 120.0;
+
+fn autosave_dir() -> PathBuf {
+    crate::settings::config_dir().join("autosave")
 }
 
 /// Apply the user's application settings to a session as commands (so they're journaled).
@@ -202,6 +214,9 @@ impl App {
             shown_title: String::new(),
             ui: UiState::new(&settings),
             settings,
+            autosaved_at: 0.0,
+            autosave_cache: TileCache::default(),
+            restored: None,
         };
         app.status = if gpu_ready {
             format!("GPU: {adapter}")
@@ -210,8 +225,90 @@ impl App {
         };
         if let Some(p) = open {
             app.open_path(&p.to_string_lossy());
+        } else {
+            app.recover_autosave();
         }
         app
+    }
+
+    // ---------------------------------------------------------------- autosave
+
+    /// Snapshot unsaved work every few minutes, at an idle moment (no stroke, pointer up).
+    pub(crate) fn autosave_tick(&mut self, ctx: &egui::Context) {
+        let now = ctx.input(|i| i.time);
+        if !self.dirty() {
+            self.autosaved_at = now;
+            return;
+        }
+        // BRUSHYE_AUTOSAVE_SECS overrides the interval (tests).
+        let every = std::env::var("BRUSHYE_AUTOSAVE_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(AUTOSAVE_SECS);
+        if now - self.autosaved_at < every
+            || self.live.is_some()
+            || ctx.input(|i| i.pointer.any_down())
+        {
+            ctx.request_repaint_after(std::time::Duration::from_secs(5));
+            return;
+        }
+        self.autosaved_at = now;
+        let Some(doc) = self.doc() else { return };
+        let journal = self.session.journal_text();
+        let opts = SaveOptions {
+            active: self.session.active_layer(),
+            journal: Some(&journal),
+        };
+        let dir = autosave_dir();
+        let meta = serde_json::json!({
+            "name": self.doc_name().trim_end_matches("[Restore]"),
+            "path": self.path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+        });
+        let result = std::fs::create_dir_all(&dir)
+            .map_err(|e| e.to_string())
+            .and_then(|()| {
+                brsh::save_file(
+                    &dir.join("recovery.brsh"),
+                    &doc,
+                    &opts,
+                    &mut self.autosave_cache,
+                )
+                .map_err(|e| e.to_string())
+            })
+            .and_then(|()| {
+                brsh::write_atomic(&dir.join("recovery.json"), meta.to_string().as_bytes())
+                    .map_err(|e| e.to_string())
+            });
+        if let Err(e) = result {
+            self.status = format!("Autosave failed: {e}");
+        }
+    }
+
+    /// Remove the autosave (after a save, or when changes were deliberately discarded).
+    pub(crate) fn clear_autosave(&mut self) {
+        let dir = autosave_dir();
+        let _ = std::fs::remove_file(dir.join("recovery.brsh"));
+        let _ = std::fs::remove_file(dir.join("recovery.json"));
+    }
+
+    /// After a crash: reopen the last snapshot as "<name>[Restore]", unsaved.
+    fn recover_autosave(&mut self) {
+        let dir = autosave_dir();
+        let Ok(l) = brsh::load_file(&dir.join("recovery.brsh")) else {
+            return;
+        };
+        let meta: serde_json::Value = std::fs::read_to_string(dir.join("recovery.json"))
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default();
+        let name = meta["name"].as_str().unwrap_or("Untitled").to_owned();
+        let s = Session::from_document(l.doc, l.active);
+        self.replace_session(s, None);
+        self.saved_len = usize::MAX; // unsaved until the user saves it
+        self.restored = Some(name.clone());
+        // replace_session removed the old snapshot: write the recovered one again at once.
+        self.autosaved_at = f64::NEG_INFINITY;
+        self.status = format!("Recovered unsaved work: {name}[Restore]. Save it to keep it.");
     }
 
     // ---------------------------------------------------------------- state queries
@@ -221,6 +318,11 @@ impl App {
     }
 
     pub(crate) fn doc_name(&self) -> String {
+        if self.path.is_none()
+            && let Some(r) = &self.restored
+        {
+            return format!("{r}[Restore]");
+        }
         self.path
             .as_ref()
             .and_then(|p| p.file_stem())
@@ -544,6 +646,10 @@ impl App {
 
     fn replace_session(&mut self, mut s: Session, path: Option<PathBuf>) {
         apply_settings(&mut s, &self.settings);
+        // The previous document's changes were saved or deliberately discarded.
+        self.clear_autosave();
+        self.restored = None;
+        self.autosave_cache = TileCache::default();
         self.live = None;
         self.saved_len = s.journal_len();
         self.session = s;
@@ -618,6 +724,8 @@ impl App {
                 self.saved_len = self.session.journal_len();
                 self.remember_recent(&path.to_string_lossy());
                 self.path = Some(path);
+                self.restored = None;
+                self.clear_autosave();
             }
             Err(e) => self.status = e,
         }
@@ -709,6 +817,7 @@ impl App {
                 }
             }
             Action::Quit => {
+                self.clear_autosave();
                 self.allow_close = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
@@ -1213,5 +1322,14 @@ impl eframe::App for App {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         crate::ui::frame(self, ui);
+        let ctx = ui.ctx().clone();
+        self.autosave_tick(&ctx);
+    }
+
+    fn on_exit(&mut self) {
+        // A normal exit with nothing unsaved leaves no recovery file behind.
+        if !self.dirty() {
+            self.clear_autosave();
+        }
     }
 }
