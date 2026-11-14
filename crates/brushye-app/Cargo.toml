@@ -1,0 +1,21 @@
+[package]
+name = "brushye-app"
+description = "The Brushye desktop app: egui/eframe UI, wgpu canvas display, tablet input (DECISIONS D-010, D-012, D-015)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "brushye-app"
+path = "src/main.rs"
+
+[dependencies]
+brushye-command = { path = "../brushye-command" }
+brushye-format = { path = "../brushye-format" }
+brushye-tablet = { path = "../brushye-tablet" }
+eframe = { version = "0.37", default-features = false, features = ["wgpu", "wayland", "x11", "default_fonts"] }

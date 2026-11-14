@@ -23,6 +23,11 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
+      # Software Vulkan (lavapipe) for the GPU display test (D-012 4). Windows uses WARP and
+      # macOS Metal, both preinstalled.
+      - name: software GPU (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
       - name: fmt
         run: cargo fmt --all --check
       - name: clippy
@@ -31,6 +36,9 @@ jobs:
         run: cargo build --workspace --all-targets --locked
       - name: test
         run: cargo test --workspace --locked
+        env:
+          # The display test must find an adapter in CI; locally it is skipped without one.
+          BRUSHYE_REQUIRE_GPU: "1"
 
   deny:
     name: cargo-deny (licenses, advisories, sources)

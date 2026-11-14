@@ -191,6 +191,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "brushye-app"
+version = "0.0.0"
+dependencies = [
+ "brushye-command",
+ "brushye-format",
+ "brushye-tablet",
+ "eframe",
+]
+
+[[package]]
 name = "brushye-cli"
 version = "0.0.0"
 dependencies = [

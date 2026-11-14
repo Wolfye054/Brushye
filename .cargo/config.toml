@@ -1,3 +1,5 @@
 [alias]
 # M1 tablet spike: `cargo pen-log` (DECISIONS D-015)
 pen-log = "run -p brushye-tablet --example pen_log"
+# The app, optimised (the brush engine is slow in debug builds): `cargo app [FILE.brsh]`
+app = "run --release -p brushye-app --"
