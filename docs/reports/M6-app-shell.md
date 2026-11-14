@@ -1,6 +1,8 @@
 # M6 report: app shell and GPU canvas (2026-11-13)
 
-**Status: ready for the maintainer's pen test.** M6's exit criterion is that the maintainer
+**Status: DONE.** The maintainer tested it with their pen on their main OS on 2026-11-13: "everything seems to be working fine".
+
+Previously: ready for the maintainer's pen test. M6's exit criterion is that the maintainer
 draws comfortably with pressure on their main OS (Linux, Wayland). It has been tested here with
 the virtual stylus on X11, not yet with a real pen on Wayland.
 

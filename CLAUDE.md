@@ -132,9 +132,8 @@ command layer) is done, verified on all three CI platforms. M3 (CPU compositor, 
 the observed blend data) is done. M4 (brush engine) is done: path, spacing, tips,
 ink modes and pressure dynamics, built against two observation runs (open items in the M4
 report). M5 (undo/redo fuzzing, the .brsh format and .brshbrush user
-brushes) is done. M6 (app shell, GPU canvas display, live strokes) is built and
-waiting for the maintainer's real-pen test; the global pressure curve placement (D-015 item 5
-vs the M4 choice) needs a decision. New architectural decisions still
+brushes) is done. M6 (app shell, GPU canvas display, live strokes, CSP 1.13.2 layout and look) is done;
+the maintainer's pen test passed. Next: M7 (brush editor + alpha polish). New architectural decisions still
 need maintainer approval first (see Working agreement). Never copy code from the maintainer's
 other projects (photocraft, clipcraft); design ideas only.
 
