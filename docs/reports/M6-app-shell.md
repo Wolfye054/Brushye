@@ -93,6 +93,13 @@ because there is no global curve setting in the app so far (identity). Options:
 I lean to (b): a stroke stays self-contained and calibration stays a property of the input
 device. Either way it needs your call before the pressure-adjustment UI (M7) is built.
 
+## A license note to confirm
+egui's bundled UI fonts (Ubuntu font, Hack, Noto Emoji, Emoji Icon Font) are under OFL-1.1 and
+the Ubuntu Font Licence. They now ship in the app, so cargo-deny flagged them. I allowed those
+two licenses for that one crate only, with a note in D-016. Both are standard font licenses that
+allow bundling with MIT/Apache software. If you'd rather pick the UI font yourself, that's a
+small change.
+
 ## Proposed next step
 After the pen test and that decision: M7, the brush editor and alpha polish (curve editor,
 main/sub colours, brush-size palette, global pressure adjustment, autosave).
