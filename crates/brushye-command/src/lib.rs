@@ -5,6 +5,7 @@
 //! document versions for reading.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+pub mod brush_preset;
 pub mod commands;
 pub mod exec;
 pub mod params;

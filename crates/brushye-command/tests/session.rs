@@ -610,3 +610,162 @@ mod roundtrip {
         }
     }
 }
+
+/// Undo/redo fuzzing (M5): random command sequences against a model of the history.
+mod undo_fuzz {
+    use super::*;
+    use proptest::prelude::*;
+
+    #[derive(Clone, Debug)]
+    enum Op {
+        New(u8),
+        Delete(u8),
+        Move(u8, u8),
+        Opacity(u8, u8),
+        Blend(u8, bool),
+        Lock(u8, bool),
+        LockAlpha(u8, bool),
+        Fill(u8, [u8; 4]),
+        Pixels(u8, i16, i16, u8),
+        Stroke(u8, Vec<(u8, u8, u8)>, u8),
+        Show(u8, bool),
+        Select(u8),
+        Undo,
+        Redo,
+    }
+
+    fn op() -> impl Strategy<Value = Op> {
+        let l = 1u8..5;
+        prop_oneof![
+            l.clone().prop_map(Op::New),
+            l.clone().prop_map(Op::Delete),
+            (l.clone(), l.clone()).prop_map(|(a, b)| Op::Move(a, b)),
+            (l.clone(), 0u8..=100).prop_map(|(a, o)| Op::Opacity(a, o)),
+            (l.clone(), any::<bool>()).prop_map(|(a, b)| Op::Blend(a, b)),
+            (l.clone(), any::<bool>()).prop_map(|(a, b)| Op::Lock(a, b)),
+            (l.clone(), any::<bool>()).prop_map(|(a, b)| Op::LockAlpha(a, b)),
+            (l.clone(), any::<[u8; 4]>()).prop_map(|(a, c)| Op::Fill(a, c)),
+            (l.clone(), -10i16..70, -10i16..70, any::<u8>())
+                .prop_map(|(a, x, y, s)| Op::Pixels(a, x, y, s)),
+            (
+                l.clone(),
+                proptest::collection::vec((0u8..64, 0u8..64, 0u8..=255), 1..6),
+                0u8..35
+            )
+                .prop_map(|(a, pts, ink)| Op::Stroke(a, pts, ink)),
+            (l.clone(), any::<bool>()).prop_map(|(a, v)| Op::Show(a, v)),
+            l.clone().prop_map(Op::Select),
+            Just(Op::Undo),
+            Just(Op::Undo),
+            Just(Op::Redo),
+        ]
+    }
+
+    fn line(op: &Op) -> String {
+        use brushye_core::brush::InkMode;
+        match op {
+            Op::New(a) => format!("layer.new L{a}"),
+            Op::Delete(a) => format!("layer.delete L{a}"),
+            Op::Move(a, b) => format!("layer.move L{a} above=L{b}"),
+            Op::Opacity(a, o) => format!("layer.set L{a} opacity={o}"),
+            Op::Blend(a, m) => format!(
+                "layer.set L{a} blend={}",
+                if *m { "multiply" } else { "screen" }
+            ),
+            Op::Lock(a, v) => format!("layer.set L{a} locked={v}"),
+            Op::LockAlpha(a, v) => format!("layer.set L{a} lock_alpha={v}"),
+            Op::Fill(a, c) => format!(
+                "layer.fill L{a} color=#{:02x}{:02x}{:02x}{:02x}",
+                c[0], c[1], c[2], c[3]
+            ),
+            Op::Pixels(a, x, y, s) => format!(
+                "layer.pixels L{a} x={x} y={y} w=1 h=2 data=b64:{}",
+                ["AAAA/wAAAP8=", "/wAAgP8AAIA=", "EiNFZ3iavN4="][usize::from(*s) % 3]
+            ),
+            Op::Stroke(a, pts, ink) => {
+                let rows: Vec<String> = pts
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (x, y, p))| format!("{x},{y},{},{}", f64::from(*p) / 255.0, i * 4000))
+                    .collect();
+                format!(
+                    "brush.stroke L{a} color=#305070 size=6 ink={} samples=[{}]",
+                    InkMode::ALL[usize::from(*ink) % InkMode::ALL.len()].name(),
+                    rows.join(";")
+                )
+            }
+            Op::Show(a, v) => format!("layer.show L{a} visible={v}"),
+            Op::Select(a) => format!("layer.select L{a}"),
+            Op::Undo => "history.undo".into(),
+            Op::Redo => "history.redo".into(),
+        }
+    }
+
+    fn pos(s: &mut Session) -> usize {
+        q(s, "?history")["position"].as_u64().unwrap_or(0) as usize
+    }
+
+    proptest! {
+        // BRUSHYE_FUZZ_CASES=5000 for a deep run.
+        #![proptest_config(ProptestConfig::with_cases(
+            std::env::var("BRUSHYE_FUZZ_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(48)
+        ))]
+        #[test]
+        fn history_model_holds(ops in proptest::collection::vec(op(), 1..60)) {
+            let mut s = Session::new();
+            run(&mut s, "doc.new 64 64 paper=none");
+            // model[p] = hash of the document at history position p, when known.
+            let mut model: Vec<Option<String>> = vec![Some(q(&mut s, "?doc.hash").to_string())];
+            for o in &ops {
+                let (h0, p0, j0) = (q(&mut s, "?doc.hash"), pos(&mut s), s.journal_text());
+                let text = line(o);
+                let ok = s.run_line(&text).is_ok();
+                let (h, p) = (q(&mut s, "?doc.hash").to_string(), pos(&mut s));
+                if !ok {
+                    // A failed command changes nothing and is not journaled.
+                    prop_assert_eq!(q(&mut s, "?doc.hash"), h0);
+                    prop_assert_eq!(p, p0);
+                    prop_assert_eq!(s.journal_text(), j0);
+                    continue;
+                }
+                match o {
+                    Op::Undo | Op::Redo => {
+                        if let Some(Some(want)) = model.get(p) {
+                            prop_assert_eq!(&h, want, "{} at position {}", text, p);
+                        }
+                        if model.len() <= p {
+                            model.resize(p + 1, None);
+                        }
+                        model[p] = Some(h);
+                    }
+                    Op::Select(_) => prop_assert_eq!(h, h0.to_string()),
+                    Op::Show(..) => {
+                        // Visibility is not undoable: it changes every version.
+                        model = vec![None; model.len()];
+                        model[p] = Some(h);
+                        prop_assert_eq!(p, p0);
+                    }
+                    _ => {
+                        // A new step (or a merge into the current one) drops the redo branch.
+                        model.truncate(p + 1);
+                        model.resize(p + 1, None);
+                        model[p] = Some(h);
+                    }
+                }
+            }
+            // Undo everything, redo everything: back to the same document.
+            let end = q(&mut s, "?doc.hash");
+            let n = pos(&mut s);
+            for _ in 0..n { run(&mut s, "history.undo"); }
+            prop_assert_eq!(pos(&mut s), 0);
+            for _ in 0..n { run(&mut s, "history.redo"); }
+            prop_assert_eq!(q(&mut s, "?doc.hash"), end.clone());
+            // The journal replays to the same document, history and journal.
+            let mut r = Session::replay(&s.journal_text()).map_err(|e| TestCaseError::fail(e.to_string()))?;
+            prop_assert_eq!(q(&mut r, "?doc.hash"), end);
+            prop_assert_eq!(q(&mut r, "?history"), q(&mut s, "?history"));
+            prop_assert_eq!(q(&mut r, "?doc.info"), q(&mut s, "?doc.info"));
+            prop_assert_eq!(r.journal_text(), s.journal_text());
+        }
+    }
+}

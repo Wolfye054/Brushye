@@ -13,7 +13,7 @@
 
 use std::sync::Arc;
 
-use brushye_core::brush::{BrushSettings, Curve, Dynamics, HARDNESS_MAX};
+use brushye_core::brush::BrushSettings;
 use brushye_core::document::DocError;
 use brushye_core::{Document, Layer, LayerId, LayerKind, Rgba8};
 use serde_json::{Value as Json, json};
@@ -117,6 +117,9 @@ pub struct Session {
     journal: Vec<RawLine>,
     undo_limit: usize,
     merge_open: Option<MergeKey>,
+    /// Content hash of the document this session was opened from (`None`: started by
+    /// `doc.new`). Recorded in the journal header so replay can check it gets the same base.
+    base: Option<u64>,
 }
 
 impl Default for Session {
@@ -134,7 +137,28 @@ impl Session {
             journal: Vec::new(),
             undo_limit: DEFAULT_UNDO_LIMIT,
             merge_open: None,
+            base: None,
         }
+    }
+
+    /// A session that starts from an existing document (e.g. one opened from a `.brsh` file).
+    /// History starts at that document; the journal header records its content hash.
+    pub fn from_document(doc: Document, active: Option<LayerId>) -> Self {
+        let base = doc.content_hash();
+        let mut s = Self::new();
+        s.steps = vec![Step {
+            label: "open",
+            doc: Arc::new(doc),
+        }];
+        s.active = active;
+        s.base = Some(base);
+        s.fix_active();
+        s
+    }
+
+    /// Content hash of the base document, if the session was opened from one.
+    pub fn base_hash(&self) -> Option<u64> {
+        self.base
     }
 
     /// Undo limit in steps, 1..=200 like CSP (values are clamped).
@@ -389,9 +413,13 @@ impl Session {
     /// The journal so far, as text (header + one line per executed command).
     pub fn journal_text(&self) -> String {
         let mut s = format!(
-            "#brushye-journal v{JOURNAL_FORMAT} app={}\n",
+            "#brushye-journal v{JOURNAL_FORMAT} app={}",
             env!("CARGO_PKG_VERSION")
         );
+        if let Some(b) = self.base {
+            s.push_str(&format!(" base={b:016x}"));
+        }
+        s.push('\n');
         for raw in &self.journal {
             s.push_str(&print_line(raw));
             s.push('\n');
@@ -402,12 +430,26 @@ impl Session {
     /// Rebuild a session from a journal: the header is required, sequence numbers must run
     /// 1, 2, 3 …, old command versions are migrated, and recorded merges are applied as written.
     pub fn replay(text: &str) -> Result<Session, LineError> {
-        let mut s = Session::new();
+        Self::replay_from(Session::new(), text)
+    }
+
+    /// Replay a journal recorded on top of an opened document (`base=` in its header). The
+    /// document must be the same one: its content hash is checked.
+    pub fn replay_on(
+        base: Document,
+        active: Option<LayerId>,
+        text: &str,
+    ) -> Result<Session, LineError> {
+        Self::replay_from(Session::from_document(base, active), text)
+    }
+
+    fn replay_from(mut s: Session, text: &str) -> Result<Session, LineError> {
         let mut lines = text.lines().enumerate();
         let err = |line: usize, msg: String| LineError { line, msg };
         match lines.next() {
             Some((_, h)) if h.starts_with("#brushye-journal ") => {
-                let v = h.split_whitespace().nth(1).unwrap_or("");
+                let mut words = h.split_whitespace().skip(1);
+                let v = words.next().unwrap_or("");
                 if v != format!("v{JOURNAL_FORMAT}") {
                     return Err(err(
                         1,
@@ -415,6 +457,38 @@ impl Session {
                             "unsupported journal format '{v}' (this Brushye reads v{JOURNAL_FORMAT})"
                         ),
                     ));
+                }
+                let base = words
+                    .find_map(|w| w.strip_prefix("base="))
+                    .map(|b| {
+                        u64::from_str_radix(b, 16)
+                            .map_err(|_| err(1, format!("bad base hash '{b}'")))
+                    })
+                    .transpose()?;
+                match (base, s.base) {
+                    (None, None) => {}
+                    (Some(_), None) => {
+                        return Err(err(
+                            1,
+                            "this journal continues a saved document (base= in the header); replay it on that document".into(),
+                        ));
+                    }
+                    (None, Some(_)) => {
+                        return Err(err(
+                            1,
+                            "this journal starts with doc.new; replay it without a base document"
+                                .into(),
+                        ));
+                    }
+                    (Some(want), Some(have)) if want != have => {
+                        return Err(err(
+                            1,
+                            format!(
+                                "base document differs: journal expects {want:016x}, got {have:016x}"
+                            ),
+                        ));
+                    }
+                    _ => {}
                 }
             }
             _ => return Err(err(1, "missing '#brushye-journal v1 …' header".into())),
@@ -630,57 +704,9 @@ fn brush_settings(p: &commands::BrushStroke) -> Result<BrushSettings, ExecError>
             "brush.stroke: color must be opaque (#rrggbb); use opacity=… for transparency".into(),
         ));
     }
-    let pct = |name: &str, v: Option<u8>, default: f64| -> Result<f64, ExecError> {
-        match v {
-            None => Ok(default),
-            Some(v) if v <= 100 => Ok(f64::from(v) / 100.0),
-            Some(v) => Err(ExecError(format!("brush.stroke: {name} {v} is over 100"))),
-        }
-    };
-    let dynamics = |name: &str,
-                    min: Option<u8>,
-                    curve: &Option<Curve>|
-     -> Result<Option<Dynamics>, ExecError> {
-        match (min, curve) {
-            (None, None) => Ok(None),
-            (None, Some(_)) => Err(ExecError(format!(
-                "brush.stroke: {name}_curve needs {name}_pressure=…"
-            ))),
-            (Some(m), c) => Ok(Some(Dynamics {
-                min: pct(&format!("{name}_pressure"), Some(m), 0.0)?,
-                curve: c.clone().unwrap_or_default(),
-            })),
-        }
-    };
-    let s = BrushSettings {
-        color: [p.color.0[0], p.color.0[1], p.color.0[2]],
-        size: p.size,
-        aa: p.aa.unwrap_or_default(),
-        hardness: p.hardness.unwrap_or(HARDNESS_MAX),
-        density: pct("density", p.density, 1.0)?,
-        opacity: pct("opacity", p.opacity, 1.0)?,
-        ink: p.ink.unwrap_or_default(),
-        gap: p.gap.unwrap_or_default(),
-        density_by_gap: p.density_by_gap.unwrap_or(false),
-        thickness: match p.thickness {
-            None => 1.0,
-            Some(t @ 1..=100) => f64::from(t) / 100.0,
-            Some(t) => {
-                return Err(ExecError(format!(
-                    "brush.stroke: thickness {t} is not in 1..=100"
-                )));
-            }
-        },
-        tip_axis: p.direction.unwrap_or_default(),
-        angle: p.angle.unwrap_or(0.0),
-        angle_follows_line: p.angle_line.unwrap_or(false),
-        stabilization: p.stabilization.unwrap_or(0),
-        size_pressure: dynamics("size", p.size_pressure, &p.size_curve)?,
-        opacity_pressure: dynamics("opacity", p.opacity_pressure, &p.opacity_curve)?,
-        density_pressure: dynamics("density", p.density_pressure, &p.density_curve)?,
-    };
-    s.validate().map_err(|e| ExecError(e.to_string()))?;
-    Ok(s)
+    crate::brush_preset::BrushPreset::from_stroke(p)
+        .settings([p.color.0[0], p.color.0[1], p.color.0[2]])
+        .map_err(|e| ExecError(format!("brush.stroke: {e}")))
 }
 
 /// Text of a single parameter value (for error messages and tools).
