@@ -143,8 +143,8 @@ the maintainer's pen test passed. M7 (brush editor + alpha polish) is done, incl
 (tool state as commands) and D-019 (native file dialogs); the maintainer tested it and
 v0.1.0-alpha is tagged. M8 (.sut import, crate brushye-sut) is done; open engine item: anti-aliased
 thin tips (B-014). D-021: before 1.0, brush fidelity fixes may change journal replay. M9 (MCP server) is in
-progress: the headless stdio server `brushye-mcp` and script examples are in; the journal viewer
-and attaching to the running app are open. New architectural decisions still
+progress: the headless stdio server `brushye-mcp`, script examples and the journal viewer are in;
+attaching MCP clients to the running app waits on D-022 (PROPOSAL). New architectural decisions still
 need maintainer approval first (see Working agreement). Never copy code from the maintainer's
 other projects (photocraft, clipcraft); design ideas only.
 

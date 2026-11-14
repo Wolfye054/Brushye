@@ -598,3 +598,53 @@ crates/
   - Freeze the engine now (the known differences from CSP would stay).
 - **Why:** exact CSP behaviour is a top priority, and alpha journals are few. Saved documents
   keep their pixels either way.
+
+## D-022 MCP clients can drive the running app (attach mode) — PROPOSAL
+- **Date:** proposed 2026-11-14 (M9). The maintainer asked for this proposal before any code.
+- **Problem:** `brushye-mcp` holds its own headless session. An AI client can't paint in, or
+  look at, the document open in the app window.
+- **Proposal:**
+  1. **Off by default.** A checkable item, *File > Allow AI clients (MCP)* (Brushye-only; it
+     sits beside the Preferences group), turns it on for the current app run. It is not saved,
+     so every run starts with it off. While a client is connected, the status bar says so, with
+     a *Disconnect* button.
+  2. **Transport.** When it's on, the app listens on a local endpoint only it and the user
+     can reach:
+     - Linux/macOS: a Unix socket `$XDG_RUNTIME_DIR/brushye/<pid>.sock` (macOS: the per-user
+       temp dir), with mode 0600 in a 0700 directory.
+     - Windows: the named pipe `\\.\pipe\brushye-<user>-<pid>`, with a DACL for the current
+       user only.
+     - No TCP port, so no network exposure and no DNS-rebinding issues.
+  3. **Bridge.** `brushye-mcp --attach` (or `--attach <pid>`, when more than one app is
+     running) connects to that endpoint. It forwards each MCP tool call as one JSON line,
+     `{"tool", "args"}`, and relays the reply. The MCP side is unchanged: same tools, same
+     schemas, same `rmcp` server. Without `--attach` it stays headless, as now.
+  4. **Execution in the app.** Requests are queued to the UI thread and run between frames
+     through the app's normal `exec` path. Undo, the History palette, the Journal window,
+     autosave and the tool-state mirror (D-018) stay consistent, and each command is one
+     History step, as if the user had done it. A request that arrives during a live pen stroke
+     waits until the stroke ends. `render` returns the CPU-flattened document (D-012).
+  5. **Shared core.** The tool dispatch (`brushye-mcp`'s `lib.rs`) moves behind a
+     `ToolHost` trait with two implementations: the headless session and the app. To keep
+     `rmcp`/`tokio` out of the app, `rmcp` and `tokio` become optional dependencies of
+     `brushye-mcp`, used only by its binary (feature `server`). The app depends only on the
+     sync core.
+  6. **File tools in attach mode.** `doc_open` and `replay` replace the user's document, so
+     they go through the app's unsaved-changes prompt, as *File > Open* does. If the user
+     cancels, the tool returns an error. `doc_save` and `export_png` write only to the path
+     given; `doc_save` never overwrites the app's current file unless that is the path given.
+  7. **New dependency:** `interprocess` (MIT OR Apache-2.0) for cross-platform local sockets
+     and named pipes, in `brushye-app` and `brushye-mcp`. The alternative is std
+     `UnixListener` plus our own named-pipe code with the `windows` crate (already approved),
+     which means more unsafe FFI.
+- **Alternatives:**
+  - The app hosts MCP itself over Streamable HTTP on localhost (`rmcp`'s HTTP server). That
+    needs no bridge process, but it adds hyper/axum to the app and a TCP port that needs a
+    token and Origin checks.
+  - The app watches a script file and runs what's appended to it. That is one-way, has no
+    results or queries, and is awkward for clients.
+  - No attach mode (headless only). That is simplest, but the AI and the user can't work on
+    the same canvas.
+- **Cost:** about 2–3 days: the endpoint and permissions on three OSes, the request queue in
+  the app, the `ToolHost` refactor, the menu item and status indicator, and tests (a headless
+  app-core test with a fake endpoint; a manual check on each OS).

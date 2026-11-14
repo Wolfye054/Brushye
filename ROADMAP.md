@@ -93,8 +93,9 @@ size 8 (B-015).
   match CSP strokes from the same brush within brush-test tolerance.
 
 ## M9 — MCP server + scripting polish
-**Status (2026-11-14): in progress.** Done: the headless stdio server (`docs/mcp.md`) and
-script examples (`examples/scripts/`). Open: the journal viewer; attaching to the running app.
+**Status (2026-11-14): in progress.** Done: the headless stdio server (`docs/mcp.md`), script
+examples (`examples/scripts/`), and the journal viewer (`brushye journal show`, Window > Journal).
+Open: attaching to the running app (D-022, PROPOSAL).
 - `brushye-mcp` exposing commands and queries; script examples; journal viewer.
 
 ## M10 — Post-alpha painting features
