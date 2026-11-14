@@ -126,16 +126,24 @@ impl Endpoint {
     ) -> io::Result<(Endpoint, mpsc::Receiver<Request>)> {
         ensure_dir(dir)?;
         let name = endpoint_string(dir, pid);
-        let opts = ListenerOptions::new()
-            .name(to_name(&name)?)
-            .nonblocking(ListenerNonblockingMode::Accept)
-            .try_overwrite(true);
-        #[cfg(unix)]
-        let opts = {
-            use interprocess::os::unix::local_socket::ListenerOptionsExt as _;
-            opts.mode(0o600)
+        let opts = || -> io::Result<ListenerOptions<'_>> {
+            Ok(ListenerOptions::new()
+                .name(to_name(&name)?)
+                .nonblocking(ListenerNonblockingMode::Accept)
+                .try_overwrite(true))
         };
-        let listener = opts.create_sync()?;
+        // The 0700 directory is the protection. A 0600 socket is a second layer where the OS
+        // supports a socket mode (Linux; not macOS, which reports Unsupported).
+        #[cfg(unix)]
+        let listener = {
+            use interprocess::os::unix::local_socket::ListenerOptionsExt as _;
+            match opts()?.mode(0o600).create_sync() {
+                Err(e) if e.kind() == io::ErrorKind::Unsupported => opts()?.create_sync()?,
+                r => r?,
+            }
+        };
+        #[cfg(not(unix))]
+        let listener = opts()?.create_sync()?;
         let marker = dir.join(format!("{pid}.endpoint"));
         std::fs::write(&marker, &name)?;
 

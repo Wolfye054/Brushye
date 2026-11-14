@@ -659,7 +659,9 @@ crates/
     on.
   - **Refinement, Unix:** the socket is a file path, never a Linux abstract socket (abstract
     sockets have no permissions). Ownership is enforced by `chmod 0700` on the directory, which
-    fails for a directory another user created.
+    fails for a directory another user created. The socket itself is 0600 where the OS supports a
+    socket mode (Linux). macOS doesn't (it returns Unsupported, found by CI), so there only the
+    0700 directory protects it, as the proposal intended.
   - **Refinement, Windows (not yet tested on Windows):** the pipe rejects remote clients and
     keeps the default named-pipe DACL. That DACL gives other local users read-only access, so
     they can't send requests. A user-only DACL can follow if Windows testing shows a need.
