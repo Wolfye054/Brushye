@@ -1,27 +1,48 @@
-//! `brushye` — headless Brushye (DECISIONS D-010/D-011).
+//! `brushye` — headless Brushye (DECISIONS D-010/D-011/D-014).
 //!
 //! ```text
-//! brushye run SCRIPT [--journal OUT] [--png OUT]   run a script (- = stdin); print query results as JSON lines
-//! brushye replay JOURNAL [--query Q]...   replay a journal, then answer queries
-//! brushye render JOURNAL OUT.png          replay a journal and export the flattened image
-//! brushye commands                        print the command/query registry (JSON)
+//! brushye run SCRIPT [--open FILE.brsh] [--journal OUT] [--png OUT] [--brsh OUT [--embed-journal]]
+//! brushye open FILE.brsh [--query Q]... [--png OUT]
+//! brushye replay JOURNAL [--base FILE.brsh] [--query Q]...
+//! brushye render JOURNAL|FILE.brsh OUT.png
+//! brushye dump FILE.brsh [--layers DIR]
+//! brushye brush new OUT.brshbrush NAME [key=value ...]
+//! brushye brush show FILE.brshbrush
+//! brushye brush list DIR
+//! brushye commands
 //! brushye --version
 //! ```
-//! Exit status: 0 on success, 1 on a script/journal error (reported as `FILE:LINE: message`),
-//! 2 on usage errors.
+//! Exit status: 0 on success, 1 on a script/journal/file error (reported as `FILE:LINE: message`
+//! where there is a line), 2 on usage errors.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::io::Read as _;
+use std::path::Path;
 use std::process::ExitCode;
 
 use brushye_command::Session;
+use brushye_command::brush_preset::BrushPreset;
+use brushye_command::core::{Document, LayerId};
+use brushye_format::brsh::{self, SaveOptions, TileCache};
+use brushye_format::{brush_file, png_io};
+use serde_json::json;
 
 const USAGE: &str = "usage:
-  brushye run SCRIPT [--journal OUT] [--png OUT]
+  brushye run SCRIPT [--open FILE.brsh] [--journal OUT] [--png OUT] [--brsh OUT [--embed-journal]]
                                           run a script (- = stdin); query results print as JSON lines
-  brushye replay JOURNAL [--query Q]...   replay a journal, then answer queries (e.g. --query '?doc.hash')
-  brushye render JOURNAL OUT.png          replay a journal and export the flattened image as PNG
+  brushye open FILE.brsh [--query Q]... [--png OUT]
+                                          open a document, answer queries, export it
+  brushye replay JOURNAL [--base FILE.brsh] [--query Q]...
+                                          replay a journal (on its base document if it has one)
+  brushye render JOURNAL|FILE.brsh OUT.png
+                                          export the flattened image as PNG
+  brushye dump FILE.brsh [--layers DIR]   show a document's manifest, layers and tiles;
+                                          --layers writes each layer as DIR/<id>.png
+  brushye brush new OUT.brshbrush NAME [key=value ...]
+                                          save a user brush (brush.stroke settings)
+  brushye brush show FILE.brshbrush       print a brush and its brush.stroke settings
+  brushye brush list DIR                  list a brush library folder
   brushye commands                        print the command/query registry
   brushye --version";
 
@@ -37,18 +58,44 @@ fn read_input(path: &str) -> Result<String, String> {
     }
 }
 
-/// Flatten the session's current document and write it as PNG.
-fn export_png(s: &Session, out: &str) -> Result<(), Fail> {
-    let doc = s
-        .document()
-        .ok_or_else(|| Fail::Run("no document to render (run doc.new first)".into()))?;
-    let img = brushye_command::core::render::flatten(&doc);
-    let bytes = brushye_format::png_io::png_bytes(&img).map_err(|e| Fail::Run(e.to_string()))?;
+/// Flatten a document and write it as PNG.
+fn export_png(doc: &Document, out: &str) -> Result<(), Fail> {
+    let img = brushye_command::core::render::flatten(doc);
+    let bytes = png_io::png_bytes(&img).map_err(|e| Fail::Run(e.to_string()))?;
     std::fs::write(out, bytes).map_err(|e| Fail::Run(format!("{out}: {e}")))
+}
+
+fn current(s: &Session) -> Result<std::sync::Arc<Document>, Fail> {
+    s.document()
+        .ok_or_else(|| Fail::Run("no document (run doc.new first)".into()))
+}
+
+fn open_brsh(path: &str) -> Result<brsh::Loaded, Fail> {
+    let l = brsh::load_file(Path::new(path)).map_err(|e| Fail::Run(e.to_string()))?;
+    for w in &l.warnings {
+        eprintln!("warning: {path}: {w}");
+    }
+    Ok(l)
 }
 
 fn print_json(j: &serde_json::Value) {
     println!("{j}");
+}
+
+fn run_queries(s: &mut Session, queries: &[String]) -> Result<(), Fail> {
+    for q in queries {
+        if !q.trim_start().starts_with('?') {
+            return Err(Fail::Usage(format!(
+                "--query must be a query (starting with '?'): {q}\n{USAGE}"
+            )));
+        }
+        match s.run_line(q) {
+            Ok(Some(j)) => print_json(&j),
+            Ok(None) => {}
+            Err(e) => return Err(Fail::Run(format!("{q}: {e}"))),
+        }
+    }
+    Ok(())
 }
 
 enum Fail {
@@ -56,8 +103,291 @@ enum Fail {
     Run(String),
 }
 
-fn real_main(args: &[String]) -> Result<(), Fail> {
+/// Parsed flags: positional arguments and `--flag value` / `--switch` options.
+struct Args {
+    pos: Vec<String>,
+    opts: Vec<(String, Option<String>)>,
+}
+
+impl Args {
+    fn parse(args: &[String], with_value: &[&str], switches: &[&str]) -> Result<Self, Fail> {
+        let usage = |m: String| Fail::Usage(format!("{m}\n{USAGE}"));
+        let (mut pos, mut opts) = (Vec::new(), Vec::new());
+        let mut it = args.iter();
+        while let Some(a) = it.next() {
+            if with_value.contains(&a.as_str()) {
+                let v = it
+                    .next()
+                    .ok_or_else(|| usage(format!("{a} needs a value")))?;
+                opts.push((a.clone(), Some(v.clone())));
+            } else if switches.contains(&a.as_str()) {
+                opts.push((a.clone(), None));
+            } else if a.starts_with("--") {
+                return Err(usage(format!("unknown option '{a}'")));
+            } else {
+                pos.push(a.clone());
+            }
+        }
+        Ok(Self { pos, opts })
+    }
+    fn one(&self, k: &str) -> Option<&str> {
+        self.opts
+            .iter()
+            .rev()
+            .find(|(n, _)| n == k)
+            .and_then(|(_, v)| v.as_deref())
+    }
+    fn all(&self, k: &str) -> Vec<String> {
+        self.opts
+            .iter()
+            .filter(|(n, _)| n == k)
+            .filter_map(|(_, v)| v.clone())
+            .collect()
+    }
+    fn has(&self, k: &str) -> bool {
+        self.opts.iter().any(|(n, _)| n == k)
+    }
+    fn exactly(&self, n: usize, what: &str) -> Result<(), Fail> {
+        if self.pos.len() == n {
+            Ok(())
+        } else {
+            Err(Fail::Usage(format!("{what}\n{USAGE}")))
+        }
+    }
+}
+
+fn save_brsh(s: &Session, out: &str, embed_journal: bool) -> Result<(), Fail> {
+    let doc = current(s)?;
+    let journal = s.journal_text();
+    let opts = SaveOptions {
+        active: s.active_layer(),
+        journal: embed_journal.then_some(journal.as_str()),
+    };
+    brsh::save_file(Path::new(out), &doc, &opts, &mut TileCache::default())
+        .map_err(|e| Fail::Run(e.to_string()))
+}
+
+fn cmd_run(args: &[String]) -> Result<(), Fail> {
+    let a = Args::parse(
+        args,
+        &["--open", "--journal", "--png", "--brsh"],
+        &["--embed-journal"],
+    )?;
+    a.exactly(1, "run needs exactly one SCRIPT")?;
+    let path = &a.pos[0];
+    let text = read_input(path).map_err(Fail::Run)?;
+    let mut s = match a.one("--open") {
+        Some(f) => {
+            let l = open_brsh(f)?;
+            Session::from_document(l.doc, l.active)
+        }
+        None => Session::new(),
+    };
+    for (i, line) in text.lines().enumerate() {
+        match s.run_line(line) {
+            Ok(Some(j)) => print_json(&j),
+            Ok(None) => {}
+            Err(e) => return Err(Fail::Run(format!("{path}:{}: {e}", i + 1))),
+        }
+    }
+    if let Some(out) = a.one("--journal") {
+        std::fs::write(out, s.journal_text()).map_err(|e| Fail::Run(format!("{out}: {e}")))?;
+    }
+    if let Some(out) = a.one("--png") {
+        export_png(&*current(&s)?, out)?;
+    }
+    if let Some(out) = a.one("--brsh") {
+        save_brsh(&s, out, a.has("--embed-journal"))?;
+    } else if a.has("--embed-journal") {
+        return Err(Fail::Usage(format!(
+            "--embed-journal needs --brsh\n{USAGE}"
+        )));
+    }
+    Ok(())
+}
+
+fn cmd_open(args: &[String]) -> Result<(), Fail> {
+    let a = Args::parse(args, &["--query", "--png"], &[])?;
+    a.exactly(1, "open needs exactly one FILE.brsh")?;
+    let l = open_brsh(&a.pos[0])?;
+    let mut s = Session::from_document(l.doc, l.active);
+    run_queries(&mut s, &a.all("--query"))?;
+    if let Some(out) = a.one("--png") {
+        export_png(&*current(&s)?, out)?;
+    }
+    Ok(())
+}
+
+fn cmd_replay(args: &[String]) -> Result<(), Fail> {
+    let a = Args::parse(args, &["--query", "--base"], &[])?;
+    a.exactly(1, "replay needs exactly one JOURNAL")?;
+    let path = &a.pos[0];
+    let text = read_input(path).map_err(Fail::Run)?;
+    let replayed = match a.one("--base") {
+        Some(b) => {
+            let l = open_brsh(b)?;
+            Session::replay_on(l.doc, l.active, &text)
+        }
+        None => Session::replay(&text),
+    };
+    let mut s = replayed.map_err(|e| Fail::Run(format!("{path}:{}: {}", e.line, e.msg)))?;
+    run_queries(&mut s, &a.all("--query"))
+}
+
+fn cmd_render(args: &[String]) -> Result<(), Fail> {
+    let a = Args::parse(args, &[], &[])?;
+    a.exactly(
+        2,
+        "render needs an input (JOURNAL or FILE.brsh) and OUT.png",
+    )?;
+    let (input, out) = (&a.pos[0], &a.pos[1]);
+    let doc = if input.ends_with(".brsh") {
+        open_brsh(input)?.doc
+    } else {
+        let text = read_input(input).map_err(Fail::Run)?;
+        let s = Session::replay(&text)
+            .map_err(|e| Fail::Run(format!("{input}:{}: {}", e.line, e.msg)))?;
+        Document::clone(&*current(&s)?)
+    };
+    export_png(&doc, out)
+}
+
+fn cmd_dump(args: &[String]) -> Result<(), Fail> {
+    let a = Args::parse(args, &["--layers"], &[])?;
+    a.exactly(1, "dump needs exactly one FILE.brsh")?;
+    let path = &a.pos[0];
+    let bytes = std::fs::read(path).map_err(|e| Fail::Run(format!("{path}: {e}")))?;
+    let l = brsh::load(&bytes, false).map_err(|e| Fail::Run(e.to_string()))?;
+    let entries = brsh::list_entries(&bytes).map_err(|e| Fail::Run(e.to_string()))?;
+    let layers: Vec<_> = l
+        .doc
+        .layers()
+        .iter()
+        .map(|layer| {
+            let prefix = format!("layers/{}/tiles/", layer.id);
+            let (tiles, stored, raw) = entries
+                .iter()
+                .filter(|e| e.0.starts_with(&prefix))
+                .fold((0u64, 0u64, 0u64), |(n, s, r), e| (n + 1, s + e.1, r + e.2));
+            json!({
+                "id": layer.id.to_string(), "name": layer.name, "kind": layer.kind.name(),
+                "visible": layer.visible, "opacity": layer.opacity, "blend": layer.blend.name(),
+                "locked": layer.locked, "lock_alpha": layer.lock_alpha,
+                "tiles": tiles, "tile_bytes": stored, "pixel_bytes": tiles * 256 * 256 * 4,
+                "zip_raw_bytes": raw,
+            })
+        })
+        .collect();
+    let out = json!({
+        "file": path,
+        "format_version": l.file_version,
+        "app": l.app,
+        "width": l.doc.width, "height": l.doc.height, "dpi": l.doc.dpi,
+        "paper": l.doc.paper.map(|p| format!("#{:02x}{:02x}{:02x}{:02x}", p.0[0], p.0[1], p.0[2], p.0[3])),
+        "active": l.active.map(|x| x.to_string()),
+        "hash": format!("{:016x}", l.doc.content_hash()),
+        "journal_lines": l.journal.as_ref().map(|j| j.lines().count()),
+        "layers": layers,
+        "entries": entries.iter().map(|e| json!({"name": e.0, "stored": e.1, "size": e.2, "method": e.3})).collect::<Vec<_>>(),
+        "warnings": l.warnings,
+    });
+    println!("{}", serde_json::to_string_pretty(&out).unwrap_or_default());
+    if let Some(dir) = a.one("--layers") {
+        std::fs::create_dir_all(dir).map_err(|e| Fail::Run(format!("{dir}: {e}")))?;
+        for layer in l.doc.layers() {
+            let only = layer_image(&l.doc, layer.id)?;
+            let out = Path::new(dir).join(format!("{}.png", layer.id));
+            std::fs::write(
+                &out,
+                png_io::png_bytes(&only).map_err(|e| Fail::Run(e.to_string()))?,
+            )
+            .map_err(|e| Fail::Run(format!("{}: {e}", out.display())))?;
+        }
+    }
+    Ok(())
+}
+
+/// One layer's own pixels as an image (straight RGBA, no paper, no blending).
+fn layer_image(doc: &Document, id: LayerId) -> Result<brushye_command::core::render::Image, Fail> {
+    let layer = doc
+        .layer(id)
+        .ok_or_else(|| Fail::Run(format!("no layer {id}")))?;
+    let (w, h) = (doc.width, doc.height);
+    let mut px = Vec::with_capacity(w as usize * h as usize * 4);
+    for y in 0..h {
+        for x in 0..w {
+            px.extend_from_slice(&layer.pixel(x, y));
+        }
+    }
+    Ok(brushye_command::core::render::Image {
+        width: w,
+        height: h,
+        px,
+    })
+}
+
+fn cmd_brush(args: &[String]) -> Result<(), Fail> {
     let usage = |m: &str| Fail::Usage(format!("{m}\n{USAGE}"));
+    match args.first().map(String::as_str) {
+        Some("new") => {
+            let (Some(out), Some(name)) = (args.get(1), args.get(2)) else {
+                return Err(usage("brush new needs OUT.brshbrush and NAME"));
+            };
+            let preset = BrushPreset::from_text(&args[3..].join(" "))
+                .map_err(|e| Fail::Run(format!("brush settings: {e}")))?;
+            let b = brush_file::BrushFile {
+                name: name.clone(),
+                settings: preset.to_json(),
+                images: Default::default(),
+            };
+            let bytes = brush_file::save(&b).map_err(|e| Fail::Run(e.to_string()))?;
+            brsh::write_atomic(Path::new(out), &bytes).map_err(|e| Fail::Run(format!("{out}: {e}")))
+        }
+        Some("show") => {
+            let Some(path) = args.get(1).filter(|_| args.len() == 2) else {
+                return Err(usage("brush show needs one FILE.brshbrush"));
+            };
+            let bytes = std::fs::read(path).map_err(|e| Fail::Run(format!("{path}: {e}")))?;
+            let (b, warnings) =
+                brush_file::load(&bytes, false).map_err(|e| Fail::Run(e.to_string()))?;
+            let preset = BrushPreset::from_json(&b.settings)
+                .map_err(|e| Fail::Run(format!("{path}: settings: {e}")))?;
+            let out = json!({
+                "name": b.name,
+                "settings": b.settings,
+                "stroke_args": preset.to_text(),
+                "images": b.images.keys().collect::<Vec<_>>(),
+                "warnings": warnings,
+            });
+            println!("{}", serde_json::to_string_pretty(&out).unwrap_or_default());
+            Ok(())
+        }
+        Some("list") => {
+            let Some(dir) = args.get(1).filter(|_| args.len() == 2) else {
+                return Err(usage("brush list needs one DIR"));
+            };
+            let lib = brush_file::scan_library(Path::new(dir))
+                .map_err(|e| Fail::Run(format!("{dir}: {e}")))?;
+            for e in lib {
+                let line = match &e.brush {
+                    Ok(b) => match BrushPreset::from_json(&b.settings) {
+                        Ok(p) => {
+                            json!({"file": e.path, "name": b.name, "stroke_args": p.to_text()})
+                        }
+                        Err(x) => json!({"file": e.path, "name": b.name, "error": x}),
+                    },
+                    Err(x) => json!({"file": e.path, "error": x.to_string()}),
+                };
+                print_json(&line);
+            }
+            Ok(())
+        }
+        _ => Err(usage("brush needs new, show or list")),
+    }
+}
+
+fn real_main(args: &[String]) -> Result<(), Fail> {
+    let rest = args.get(1..).unwrap_or(&[]);
     match args.first().map(String::as_str) {
         Some("--version" | "-V") => {
             println!("brushye {}", env!("CARGO_PKG_VERSION"));
@@ -77,93 +407,15 @@ fn real_main(args: &[String]) -> Result<(), Fail> {
                 other => Err(Fail::Run(format!("{other:?}"))),
             }
         }
-        Some("run") => {
-            let mut path = None;
-            let mut journal = None;
-            let mut png = None;
-            let mut it = args[1..].iter();
-            while let Some(a) = it.next() {
-                match a.as_str() {
-                    "--journal" => {
-                        journal = Some(
-                            it.next()
-                                .ok_or_else(|| usage("--journal needs a file"))?
-                                .clone(),
-                        )
-                    }
-                    "--png" => {
-                        png = Some(
-                            it.next()
-                                .ok_or_else(|| usage("--png needs a file"))?
-                                .clone(),
-                        )
-                    }
-                    s if path.is_none() => path = Some(s.to_owned()),
-                    s => return Err(usage(&format!("unexpected argument '{s}'"))),
-                }
-            }
-            let path = path.ok_or_else(|| usage("run needs a SCRIPT"))?;
-            let text = read_input(&path).map_err(Fail::Run)?;
-            let mut s = Session::new();
-            for (i, line) in text.lines().enumerate() {
-                match s.run_line(line) {
-                    Ok(Some(j)) => print_json(&j),
-                    Ok(None) => {}
-                    Err(e) => return Err(Fail::Run(format!("{path}:{}: {e}", i + 1))),
-                }
-            }
-            if let Some(out) = journal {
-                std::fs::write(&out, s.journal_text())
-                    .map_err(|e| Fail::Run(format!("{out}: {e}")))?;
-            }
-            if let Some(out) = png {
-                export_png(&s, &out)?;
-            }
-            Ok(())
-        }
-        Some("replay") => {
-            let mut path = None;
-            let mut queries = Vec::new();
-            let mut it = args[1..].iter();
-            while let Some(a) = it.next() {
-                match a.as_str() {
-                    "--query" => queries.push(
-                        it.next()
-                            .ok_or_else(|| usage("--query needs a query"))?
-                            .clone(),
-                    ),
-                    s if path.is_none() => path = Some(s.to_owned()),
-                    s => return Err(usage(&format!("unexpected argument '{s}'"))),
-                }
-            }
-            let path = path.ok_or_else(|| usage("replay needs a JOURNAL"))?;
-            let text = read_input(&path).map_err(Fail::Run)?;
-            let mut s = Session::replay(&text)
-                .map_err(|e| Fail::Run(format!("{path}:{}: {}", e.line, e.msg)))?;
-            for q in queries {
-                if !q.trim_start().starts_with('?') {
-                    return Err(usage(&format!(
-                        "--query must be a query (starting with '?'): {q}"
-                    )));
-                }
-                match s.run_line(&q) {
-                    Ok(Some(j)) => print_json(&j),
-                    Ok(None) => {}
-                    Err(e) => return Err(Fail::Run(format!("{q}: {e}"))),
-                }
-            }
-            Ok(())
-        }
-        Some("render") => {
-            let (Some(path), Some(out), None) = (args.get(1), args.get(2), args.get(3)) else {
-                return Err(usage("render needs JOURNAL and OUT.png"));
-            };
-            let text = read_input(path).map_err(Fail::Run)?;
-            let s = Session::replay(&text)
-                .map_err(|e| Fail::Run(format!("{path}:{}: {}", e.line, e.msg)))?;
-            export_png(&s, out)
-        }
-        Some(other) => Err(usage(&format!("unknown subcommand '{other}'"))),
+        Some("run") => cmd_run(rest),
+        Some("open") => cmd_open(rest),
+        Some("replay") => cmd_replay(rest),
+        Some("render") => cmd_render(rest),
+        Some("dump") => cmd_dump(rest),
+        Some("brush") => cmd_brush(rest),
+        Some(other) => Err(Fail::Usage(format!(
+            "unknown subcommand '{other}'\n{USAGE}"
+        ))),
     }
 }
 
