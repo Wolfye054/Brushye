@@ -51,7 +51,36 @@
   asymmetric row-200 edges, and explains why no smooth model is exact. The round tip's AA None
   scanline rule (B-001) is the closest known analogue.
 
+## Analysis (2026-11-14): the tip is a 12-gon
+- **Edge shape:**
+  - In `B014_sweep_a0_aa2.png`, dab at (70.5, 70.5), each column's summed alpha gives the edge
+    height (a linear ramp's sum is the distance to its edge).
+  - The top edge changes height in **straight runs with kinks** near x ≈ 60, 69, 81 and 86,
+    not along an ellipse curve.
+  - The rows above and below the solid core are **triangles across x**, peaking near x = 69:
+    a shallow polygon edge seen through a vertical ramp.
+- **Polygon fit** (`polyfit.py` approach: N-gon inscribed in the ellipse, corners at
+  θ0 + k·360°/N, linear ramp on the distance to the polygon):
+  - N = 12 with θ0 = 0 fits best of 8–64 sides.
+  - Its corners fall at x = 70 ± 10.25 and 70 ± 17.75, where the kinks are.
+  - On the run-1 dabs the free parameters come out natural: ramp **1.5 / 2.5 / 3.5 px** (the
+    round tip's AA widths, B-001), no edge inset, centre y −0.125.
+  - Total error is 142 / 152 / 174 against 401 / 577 / 742 for Brushye's current model; worst
+    pixel ≈ 80–120.
+  - **What's left is row-structured:** the long-axis tips (up to −81) and the fringe rows
+    (±50). CSP's AA on the polygon is probably done per row, not by distance.
+- **Not adopted.** In the engine the 12-gon (like the earlier ellipse ramp) makes the
+  cross-check strokes worse: X-05 goes to 31 % of pixels off and −6 % ink.
+  - Every model that matches CSP's single thin dab leaves its strokes too light. The current
+    interim model is ~40 % too heavy per dab, which happens to give the right stroke ink.
+  - A spacing factor alone doesn't close it (ink matches only near f ≈ 0.4; 22 % of pixels
+    still off).
+  - So thin dabs in a stroke differ from a lone dab in some way not yet seen.
+
 ## Open
-- Find the row-based rule from the sweep data, then replace the interim model.
+- **Run 3:** thin-tip strokes with isolated dabs (gap Fixed 300) and with Normal gap, angle 0 and
+  30, AA None and Middle, plus Direction of line. That shows each dab inside a stroke next to
+  a lone dab.
+- Then: the per-row AA rule on the 12-gon, from the sweep data.
 - (Earlier note) a dense sub-pixel sweep of thin dabs at each AA level, as B-001 did for the round tip, to
   find the exact rule.
