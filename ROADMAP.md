@@ -61,7 +61,7 @@ Ordering follows CLAUDE.md's priorities: command layer → brush engine → .sut
 - User brushes saved as `.brshbrush` in a brush library (D-014).
 - **Exit:** save → load → replay gives the same hash; undo/redo fuzz tests pass.
 
-## M6 — App shell + GPU canvas display
+## M6 — App shell + GPU canvas display — BUILT, awaiting the maintainer's pen test (docs/reports/M6-app-shell.md)
 - eframe window, wgpu canvas display: CPU-composited tiles uploaded as textures, pan/zoom/rotate
   (D-012: the CPU composites, the GPU only displays).
 - Display test on a software adapter in CI: at 100 % zoom the shown pixels equal the CPU tiles.

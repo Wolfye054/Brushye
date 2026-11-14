@@ -109,7 +109,8 @@ command layer. Nothing changes state outside it.
 - `crates/`: Rust workspace. Layout per DECISIONS D-010 (accepted): brushye-core, brushye-command,
   brushye-format, brushye-app, brushye-cli, plus brushye-tablet (M1). Only brushye-app and
   brushye-tablet may use UI/GPU/OS-input crates. Crates are created as their milestone starts
-  (now: brushye-core, brushye-command, brushye-format, brushye-cli, brushye-tablet).
+  (now: brushye-core, brushye-command, brushye-format, brushye-cli, brushye-tablet, brushye-app;
+  run the app with `cargo app`).
 - `docs/command-format.md`: the exact command text grammar (D-011).
 - `docs/native-format.md`: the exact `.brsh` / `.brshbrush` layout (D-014).
 - `docs/reports/`: milestone reports.
@@ -123,7 +124,9 @@ command layer) is done, verified on all three CI platforms. M3 (CPU compositor, 
 the observed blend data) is done. M4 (brush engine) is done: path, spacing, tips,
 ink modes and pressure dynamics, built against two observation runs (open items in the M4
 report). M5 (undo/redo fuzzing, the .brsh format and .brshbrush user
-brushes) is done. Next: M6 (app shell + GPU canvas display). New architectural decisions still
+brushes) is done. M6 (app shell, GPU canvas display, live strokes) is built and
+waiting for the maintainer's real-pen test; the global pressure curve placement (D-015 item 5
+vs the M4 choice) needs a decision. New architectural decisions still
 need maintainer approval first (see Working agreement). Never copy code from the maintainer's
 other projects (photocraft, clipcraft); design ideas only.
 
