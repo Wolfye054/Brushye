@@ -756,8 +756,28 @@ impl Arg for Samples {
             B64.encode(brushye_core::input::encode(&self.0).unwrap_or_default())
         ))
     }
+    /// JSON: a `"b64:…"` or `"[x,y,p,t;…]"` string, or an array of rows `[[x,y,p,t],…]`
+    /// (the readable form, for scripts and MCP clients).
     fn from_json(j: &Json) -> Result<Self, String> {
-        let s = j.as_str().ok_or("expected a \"b64:…\" string in JSON")?;
+        if let Some(rows) = j.as_array() {
+            let rows = rows
+                .iter()
+                .map(|r| {
+                    r.as_array()
+                        .ok_or("each sample must be an array [x,y,p,t]")?
+                        .iter()
+                        .map(|v| match v {
+                            Json::Number(n) => Ok(n.to_string()),
+                            _ => Err("sample values must be numbers"),
+                        })
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            return Samples::from_matrix(&rows);
+        }
+        let s = j
+            .as_str()
+            .ok_or("expected a \"b64:…\" string or [[x,y,p,t],…] in JSON")?;
         text_value(s).and_then(|v| Self::from_value(&v))
     }
 }

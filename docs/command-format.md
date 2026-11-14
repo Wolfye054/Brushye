@@ -81,13 +81,14 @@ For every command value `c`: `parse(print(c)) == c` and `print(parse(print(c))) 
 
 Each line maps one-to-one to:
 ```json
-{"seq": 3, "merge": false, "cmd": "layer.set", "v": 1, "args": {"layer": "L2", "opacity": 0.8}}
+{"seq": 3, "merge": false, "cmd": "layer.set", "v": 1, "args": {"layer": "L2", "opacity": 80}}
 ```
 - `seq` and `merge` are present only for journal lines; queries use `"query": "layer.list"` instead
   of `"cmd"`.
 - Positional parameters appear under their parameter names. Ids, references, enums and colours
   are JSON strings in their text syntax (`"L2"`, `"@current"`, `"multiply"`, `"#ff8800"`); blobs
-  are `"b64:…"` strings; matrices are arrays of arrays of numbers.
+  are `"b64:…"` strings; matrices are arrays of arrays of numbers. Stroke samples may be given
+  either way (`"b64:…"` or `[[x,y,p,t],…]`); the JSON printer always writes the blob.
 
 ## 6. Errors
 
