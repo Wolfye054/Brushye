@@ -23,6 +23,9 @@ Experiments (canvas layouts):
   tiltsweep             B-010 8 strokes with tilt_x = 0, 1/7 .. 1 (vpen units of 63), tilt_y 0
   pgrid                 B-004 21 constant-pressure strokes P = 0, 0.05 .. 1 on an 800x800 canvas
                         (3 columns x 7 rows, cell 260x110; same event pattern as pen_grid.py)
+  xcheck                M8 .sut cross-check on an 800x600 canvas: a pressure ramp P 0.1 -> 1 (y 100.5),
+                        constant P = 0.5 (y 250.5), a full-pressure sine wave (y 430.5 +- 60) and one
+                        full-pressure dab at (400.5, 555.5); events every 2 px, 5 ms (xcheck_strokes)
 """
 import math
 import sys
@@ -129,6 +132,19 @@ def pgrid_cells():
     return [(P, 20 + (i % 3) * 260 + 50, 55 + (i // 3) * 110) for i, P in enumerate(PGRID_P)]
 
 
+def xcheck_strokes():
+    """M8 cross-check strokes: lists of (x, y, P) in canvas px, P = CSP pressure 0..1."""
+    xs = [60.5 + 2 * i for i in range(341)]  # 60.5 .. 740.5
+    n = len(xs) - 1
+    ramp = [(x, 100.5, 0.1 + 0.9 * i / n) for i, x in enumerate(xs)]
+    flat = [(x, 250.5, 0.5) for x in xs]
+    wave = [(x, 430.5 + 60 * math.sin(2 * math.pi * (x - 60.5) / 340), 1.0) for x in xs]
+    return [ramp, flat, wave]
+
+
+XCHECK_DAB = (400.5, 555.5)
+
+
 def vpen_p(P):
     """vpen value for CSP pressure P (libinput chain, B-004): p = 0.0099 + 0.9901 P."""
     return 0.0 if P <= 0 else min(1.0, 0.0099 + 0.9901 * P)
@@ -212,6 +228,10 @@ def main():
             for k in range(1, 61):
                 L += [f"move {sx + 2 * k:.2f} {sy:.2f} {p:.5f}", "wait 8"]
             L += ["wait 30", "up", "wait 80", "out", "wait 120"]
+    elif ex == "xcheck":
+        for pts in xcheck_strokes():
+            L += stroke(ox, oy, [(x, y, round(vpen_p(P), 5)) for x, y, P in pts], ms=5)
+        L += dab(ox, oy, *XCHECK_DAB)
     else:
         sys.exit(f"unknown experiment {ex}")
     print("\n".join(L))

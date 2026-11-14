@@ -1,0 +1,13 @@
+# X-xx<TAB>brush.stroke settings, as imported from ~/brushye-samples/xcheck/X-xx.sut (B-012)
+X-01	size=20.0 direction=horizontal size_pressure=0
+X-02	size=6.0 aa=none direction=horizontal
+X-03	size=40.0 aa=strong hardness=3 direction=horizontal
+X-04	size=60.0 hardness=1 direction=horizontal
+X-05	size=30.0 thickness=30 direction=vertical angle=30.0
+X-06	size=30.0 thickness=40 direction=horizontal angle_line=true
+X-07	size=30.0 density=40 gap=narrow direction=horizontal
+X-08	size=20.0 gap=50.0 direction=horizontal
+X-09	size=30.0 density=60 gap=wide density_by_gap=true direction=horizontal
+X-10	size=30.0 opacity=50 direction=horizontal opacity_pressure=20
+X-11	size=40.0 direction=horizontal size_pressure=30 size_curve=[0.5,0.25153374233128833]
+X-12	size=30.0 hardness=2 direction=horizontal density_pressure=0

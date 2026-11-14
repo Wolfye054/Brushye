@@ -10,6 +10,9 @@ publish = false
 [lints]
 workspace = true
 
+[dev-dependencies]
+brushye-format = { path = "../brushye-format" }
+
 [dependencies]
 brushye-command = { path = "../brushye-command" }
 # .sut files are SQLite databases (D-016, approved 2026-11-13). `bundled` compiles SQLite in.

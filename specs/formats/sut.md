@@ -114,5 +114,5 @@
    assumed to be by name; the behaviour check confirms it.
 4. The unknown effector words, `Stickness`, and `VariantShowParam` (which rows Tool property
    shows; a 32–40-byte blob).
-5. **Behaviour cross-check** (M8 exit criterion): strokes made with imported sub tools against
-   CSP strokes made with the same sub tool.
+5. **Behaviour cross-check** (M8 exit criterion): done in B-012. The import is exact. The
+   remaining differences are engine gaps (soft-tip strokes, anti-aliased thin tips).
