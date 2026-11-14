@@ -1,5 +1,5 @@
 # B-004 Pen pressure → brush size (minimum value + curve)
-- Status: **implemented (linear, minimum, 1-point curve; multi-point curves use an unverified B-spline)**
+- Status: **implemented** (linear, minimum, 1-, 2- and 3-point curves observed; run 2 confirmed the B-spline)
 - CSP version: 1.13.2 (PRO, 64-bit, build 202301210208)
 - Needs: automated-Wine with virtual stylus (D-003). Flag `verify-native`: one spot check with a
   real pen on native Windows (Wintab vs Windows Ink may scale raw pressure differently)
@@ -62,13 +62,34 @@ Data: `data/B004_min0_linear.png`, `data/B004_min20_linear.png`, `data/B004_curv
    (Seen on a throwaway canvas; not measured.)
 5. Global and per-setting curves compose as **sub(global(P))**; see B-006.
 
+## Follow-up 2026-11-13 (run 2): curves with 2 and 3 points
+Method: automated-Wine + virtual stylus, observer Claude. ▲ 800×800 transparent canvas, size 100,
+AA Middle, hardness 5, density 100, gap Normal, size dynamics pen pressure (minimum 0).
+`tools/observe/brush_run2.py pgrid`: 21 constant-pressure strokes P = 0, 0.05 … 1 (same event
+pattern as `pen_grid.py`, 3 columns × 7 rows, 260×110 px cells). Curve points were dragged onto
+grid-line intersections of the curve editor (graph (0,0) at screen (256, 593), (1,1) at
+(407.5, 430); screenshots in `obs-out/run2-ui/`, not committed):
+- `data/B004_pgrid_linear.png`: linear (calibration; width ≈ 100·P − 1.9 px);
+- `data/B004_pgrid_2pt.png`: points (0.25, 0.75), (0.75, 0.25);
+- `data/B004_pgrid_3pt.png`: points (0.25, 0.75), (0.5, 0.25), (0.75, 0.25).
+
+Analysis `tools/observe/b004_curves.py data` (stroke width inverted through the linear run):
+
+| curve | quadratic B-spline | one Bézier of degree n+1 | polyline |
+|---|---|---|---|
+| 2 points | **max 0.0015**, mean 0.0008 | 0.122 | 0.251 |
+| 3 points | **max 0.0024**, mean 0.0010 | 0.177 | 0.215 |
+
+**Multi-point curves are the quadratic B-spline on the control polygon** (0,0), points…, (1,1),
+pieces joined at the midpoints between interior points. The editor draws the curve touching
+the polygon at those midpoints (e.g. at (0.625, 0.25) for the 3-point curve).
+
 ## Expected result (for Brushye)
 dab_diameter = size × (m + (1 − m) × C_sub(C_global(P))), with C = the curve through the
 editor's points (quadratic Bézier for 1 interior point). P = 0 produces no dab.
 
 ## Open questions
-- Curves with ≥2 interior points: a uniform B-spline, piecewise Bézier, or a single higher-order
-  Bézier? Run a 2-point and a 3-point curve with the same grid.
+- (Answered in run 2: quadratic B-spline on the control polygon.)
 - Exact rounding of the diameter (the even row counts) needs a sub-pixel analysis of single dabs
   (B-001).
 - Is there a pressure threshold below which no dab is drawn (CSP side, besides P = 0)?
@@ -76,7 +97,7 @@ editor's points (quadratic Bézier for 1 interior point). P = 0 produces no dab.
 
 ## Implementation (2026-11-13, M4)
 `brushye_core::brush::{Dynamics, Curve}`. Multi-point curves use the quadratic B-spline
-through the control points (equal to the observed Bézier for one point; unverified for more).
+through the control points (equal to the observed Bézier for one point; confirmed for 2 and 3 points in run 2).
 Test `b004_b005_pressure_dynamics_match_within_tolerance` replays the 21-stroke grids: errors
 only on the outermost anti-aliased pixel (max 9 / 13 / 11 levels for the three runs), about
 0.05 px of diameter, within the precision with which pressure reaches CSP.

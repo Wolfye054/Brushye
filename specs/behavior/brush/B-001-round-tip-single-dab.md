@@ -1,5 +1,5 @@
 # B-001 Round tip: single-dab profile vs size and anti-aliasing
-- Status: **implemented (AA Weak/Middle/Strong exact; AA None edge-tie rule open)**
+- Status: **implemented (AA Weak/Middle/Strong exact; AA None: scanline rule found in run 2, not yet implemented)**
 - CSP version: 1.13.2 (PRO, 64-bit, build 202301210208)
 - Date / method / observer: 2026-11-13 / automated-Wine + virtual stylus (`vpen.py`, Xorg :78
   libinput → Wine wintab) / Claude. Flag `verify-native` only for the AA None tie rule.
@@ -44,8 +44,44 @@ Let d be the distance from the dab centre to the pixel centre, R = size/2, and
 - Rounding instead of truncating drops the AA levels to 55–95 % exact (the earlier fit,
   `b001_fit_centre.py`).
 
+## Follow-up 2026-11-13 (run 2): the AA None edge rule
+Method: automated-Wine + virtual stylus, same sub tool (AA None, hardness 5, density 100,
+opacity 100), ▲ 800×800 transparent canvas (origin screen (549, 163)). `tools/observe/
+brush_run2.py sweep SIZE`: 10×10 single dabs per size, press point = origin + pitch·(i, j) +
+(i/10, j/10), so every 0.1 px sub-pixel offset in x and y is covered. Sizes 1, 2, 3, 5, 16, 63:
+`data/B001_sweep_s<SIZE>.png`. ▲ Plus the size-16 sweep at AA Weak:
+`data/B001_sweep_aa1_s16.png`.
+
+1. **The dabs land exactly where the pen was sent.** Fitting each AA Weak dab with the exact
+   model above (`b001_centres.py data 16 1`, 1/100 px grid search) gives offset (0.00, 0.00)
+   for all 100 dabs, residual ≤ 2 alpha levels per dab. So the AA None misses are not input
+   error.
+2. **AA None is a scanline fill, not a closed disc.** A row whose centre is at dy from the dab
+   centre is drawn when |dy| ≤ R; in it, a pixel is lit when **|dx| ≤ √(R² − dy²) + 0.1**.
+   `b001_sweep_analyze.py data` (edge band = pixels within 1.5 px of the circle):
+
+   | size | span + 0.1 | closed disc d ≤ R | 4×4 supersample |
+   |---|---|---|---|
+   | 1 | 1237/1253 (16 wrong) | 26 wrong | 52 |
+   | 2 | 1943/1957 (14) | 44 | 68 |
+   | 3 | 2802/2817 (15) | 63 | 71 |
+   | 5 | 4686/4704 (18) | 100 | 76 |
+   | 16 | 15080/15096 (16) | 322 | 242 |
+   | 63 | 59379/59394 (15) | 1263 | 887 |
+
+   The constant 0.1 px is the same at every size (0.09 and 0.11 are worse; adding a row
+   offset does not help). It explains why run 1 saw "pixels up to ~0.1 px beyond R" in the
+   horizontal direction only.
+3. The 14–18 remaining pixels per size are exact ties:
+   - tangent rows (|dy| = R exactly): the **top** row (dy = −R) lights the pixel under the
+     centre, the bottom row (dy = +R) lights nothing;
+   - pixels at exactly |dx| = √(R² − dy²) + 0.1 go either way.
+   Size 1 at a pixel corner lighting the top-left pixel (run 1) is the tangent-row case.
+
+Status of the open question: **answered** (rule above), apart from the tie handling.
+
 ## Open questions
-- AA None tie rule. At exactly d = R CSP covers some neighbours but not others, depending on
+- (Answered 2026-11-13, see the follow-up: scanline rule with +0.1 px in x.) AA None tie rule. At exactly d = R CSP covers some neighbours but not others, depending on
   direction. Examples: size 2 at a pixel centre lights the top, left and right neighbours but
   not the bottom one. Size 1 at a pixel corner lights one pixel. B-002 also shows strokes at
   sizes 16 and 63 covering pixels up to ~0.1 px beyond R. Needs a dedicated sub-pixel sweep

@@ -54,6 +54,41 @@ by `b009_profile.py data/B009_h?_aa0.png`.
   Next: the same 5 levels at sizes 11 and 41, then fit a profile in d/R.
 - Is level 4's ramp beyond R a fixed pixel width or a fraction of size?
 
+## Follow-up 2026-11-13 (run 2): size scaling and the soft-tip centre
+Method: automated-Wine + virtual stylus, B-001 setup (AA None, density 100, opacity 100),
+▲ 800×800 transparent canvas. `tools/observe/brush_run2.py hard SIZE` places single dabs
+(layout `HARD_POINTS`): size 11 at (40.5, 40.5), size 41 at (120.5, 60.5), size 41 at
+x = 60.5 + 60k + f with f = 0.0 … 0.9 in 0.1 steps (y = 160.5 and 260.5), and size 11 at
+x = 40.5 + 30k + k/10 (y = 340.5). Hardness 1 … 5, sizes 11 and 41, one export each:
+`data/B009_run2_h<L>_s<SIZE>.png`.
+
+1. **The soft-tip centre offset is fixed, +0.5 px on both axes**, not rounding to the pixel
+   grid. Alpha-weighted centroids minus the press point (`b009_run2_analyze.py data`):
+   - h1, h2, h3 at sizes 11 and 41: (+0.50 ± 0.04, +0.50 ± 0.02) at every sub-pixel press
+     position 0.0 … 0.9 (grid rounding would give offsets that change with the position);
+   - h4: +0.38 … +0.50 (its ramp is narrower than a pixel at these sizes, so the centroid is
+     noisy); h5 (hard): 0.00, within the pixelisation noise of a hard disc.
+2. **The profiles scale with the radius.** Predicting every pixel from the size-101 profile
+   scaled by R, with the +0.5 offset, exactly like Brushye's interim table
+   (`b009_scaling.py data`):
+
+   | level | size 11 | size 41 |
+   |---|---|---|
+   | 1 | 100 % within 1 (max 1) | 99.7 % within 1 (max 2) |
+   | 2 | 99.0 % within 1 (max 4) | 100 % within 1 (max 2) |
+   | 3 | 96.9 % within 1 (max 15) | 99.6 % within 1 (max 2) |
+   | 4 | 89 % within 1 (max 255) | 93 % within 1 (max 97) |
+
+   Areas Σα/255 divided by R² agree to 3 digits across sizes 11, 41 and 101 (h1: 1.36).
+3. **Level 4 also scales with R**: the ramp runs from about R − 0.04R to R + 0.02R at all three
+   sizes (≈ 3 px at size 101, 1.25 px at 41, 0.35 px at 11). Its large errors at 11 and 41 are
+   single edge pixels flipping where that ramp is narrower than a pixel. It is point-sampled,
+   the same kind of error as the AA None edge rule (B-001).
+
+Status of the open questions: centre offset **answered** (fixed +0.5); scaling **answered** for
+levels 1–3 (R-relative profile). Still open: an exact formula for the profile (the table is
+empirical) and the exact sub-pixel behaviour of level 4.
+
 ## Implementation (2026-11-13, M4)
 Interim model until the exact falloff is known: the observed radial profile per level, binned
 at 0.25 px (`tools/observe/make_hardness_tables.py` → `brush/hardness_tables.rs`), scaled by

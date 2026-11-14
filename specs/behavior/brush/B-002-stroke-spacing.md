@@ -62,16 +62,75 @@ Darken off. Brush tip > "Adjust brush density by gap" off.
    - With the plain closed disc (d ≤ R), sizes 4/7/16 at some presets have 11–52 wrong
      pixels, but the spacing found is the same.
 
+## Follow-up 2026-11-13 (run 2): paths, pressure-driven size, stroke options
+Method: automated-Wine + virtual stylus, observer Claude, sub tool "Obs pen", AA None,
+hardness 5, ▲ 800×800 transparent canvas. Inputs from `tools/observe/brush_run2.py`.
+
+### How the input events become a path
+Exports `data/B002_arc_200.png`, `B002_arc_12.png` (semicircle, centre (300.5, 330.5), r 150,
+200 or 12 segments), `B002_poly_1.png`, `B002_poly_0.png` (polyline (60.5,60.5) → (300.5,60.5) →
+(300.5,300.5) → (540.5,300.5) → (420.5,120.5), with an event every ~2 px or at the corners only).
+Brush size 6, density 100, gap Fixed 300 (18 px), so every dab is isolated; dab centre =
+centroid of its connected pixels (`dab_centres.py`). Analysis `tools/observe/b002_smoothing.py data`.
+
+**CSP treats the input events as control points of a quadratic B-spline**: the path runs
+straight from the first event to the midpoint of the first segment, then for every interior
+event P_i follows the quadratic Bézier (m_i, P_i, m_{i+1}) between the neighbouring segment
+midpoints, then straight from the last midpoint to the last event. Dabs sit every s px of arc
+length along that path from the press point (B-002 rule).
+
+| export | events | polyline: dabs, max dist | **B-spline: dabs, max dist** |
+|---|---|---|---|
+| arc_200 | 201 | 27/27, 0.25 px | **27/27, 0.25 px** |
+| arc_12 | 13 | 27 vs 26 observed, 15.5 px | **26/26, 0.25 px** |
+| poly_1 | 2 px apart | 53 vs 52, 16.8 px | **52/52, 0.25 px** |
+| poly_0 | corners only | 53 vs 43, 50.2 px | **43/43, 0.26 px** |
+
+0.25 px is the centroid precision of a 6 px AA None dab. With dense events the B-spline
+differs from the polyline only by rounding each event's corner, which shortens the path a
+little (poly_1: 0.5 px after the first corner); with sparse events it cuts corners heavily
+(poly_0: the first 90° corner is replaced by a curve from (180.5, 60.5) to (300.5, 180.5)).
+This explains run 1's polyline P (B-003): its corners and end fell short of the polyline.
+Arc length vs chord between dabs cannot be told apart at this curvature (r = 150, s = 18: the
+two differ by 0.28 px over the whole arc).
+
+### Spacing with pressure-driven size
+`data/B002_ramp.png`: size 20, size dynamics pen pressure (minimum 0, linear), gap Fixed 300,
+density 100, straight stroke (40.5, 200.5) → (560.5, 200.5) with pressure 0.2 → 1.0 (vpen,
+`RAMP`). `b002_options.py` (`ramp_check`): **the gap after a dab follows that dab's own size**
+(x_{k+1} = x_k + 3·20·P(x_k)): 19/19 dabs, max 0.77 px, mean 0.33 px (pressure precision).
+Using the next dab's size instead is wrong (17 vs 19 dabs).
+
+### Stroke options (size 40, density 30, gap Normal unless noted; rows at 5 ms, 20 ms and 52 events)
+Exports `data/B002_rows_*.png`, analysis `tools/observe/b002_options.py data`.
+- `rows_base`: the B-002/B-003 model with the AA None scanline rule of B-001: 64518/65020 px exact.
+- **"Correct velocity input" OFF** (`rows_novelocity`): byte-identical to the base. No effect on
+  evenly timed straight strokes (under Wine; it may matter with real, uneven input).
+- **"Adjust brush density by gap" ON** lowers the per-dab density in proportion to the gap.
+  Each export gives two constraints on the per-dab density d′ (with CSP's truncation, an 8-bit
+  level v means alpha in [256v/65535, 256(v+1)/65535)): the plateau, covered by n dabs, is
+  1 − (1 − d′)ⁿ, and the single dab near the press point is d′:
+
+  | export | gap k | density D | plateau (n dabs) | single dab | d′ interval | 3·D·k |
+  |---|---|---|---|---|---|---|
+  | rows_adjustgap_narrow | 0.04 | 30 | 157 (26) | 9 | [0.03588, 0.03626) | 0.036 |
+  | rows_adjustgap | 0.08 | 30 | 159 (13) | 18 | [0.07193, 0.07267) | 0.072 |
+  | rows_adjustgap_wide | 0.12 | 30 | 164 (9) | 27 | [0.10749, 0.10857) | 0.108 |
+  | rows_adjustgap_d60 | 0.08 | 60 | 222 (13) | 36 | [0.14384, 0.14453) | 0.144 |
+
+  All four fit **d′ = 3·D·k = D·s / (size/3)**: density is normalised to a reference gap of a
+  third of the size. Four exports only, and gaps above 33 % of size (is d′ capped at D?)
+  are untested.
+
 ## Open questions
-- **AA None edge rule.** A 4×4 sub-sample rule (≥ 8 of 16 inside) fits these horizontal
-  centre rows, but it over-covers the vertical caps in B-003, so it is not the true rule.
-  See B-001.
-- Spacing along curves: arc length vs chord between events. Only straight strokes were
-  measured here.
-- Whether s follows the per-dab size when size has pressure dynamics.
-- "Adjust brush density by gap" ON, and "Correct velocity input" OFF, were not tested.
+- (Answered in run 2, see B-001: AA None is a scanline fill with +0.1 px in x.)
+- (Answered in run 2: input events are B-spline control points; dabs follow its arc length.)
+  Arc length vs chord between dabs on tight curves.
+- (Answered in run 2: the gap follows the size of the dab just placed.)
+- "Adjust brush density by gap": confirm d′ = 3·D·k at more densities and at gaps above
+  33 % of size. "Correct velocity input" with uneven event timing (native Windows).
 - The dropdown next to the presets could not be opened under Wine. Its contents and the
-  Fixed range are unknown (10 to 90 used successfully).
+  Fixed range are unknown (10 to 300 used successfully).
 
 ## Implementation (2026-11-13, M4)
 `brushye_core::brush::place_dabs`: t_k = k·gap·size/100 computed directly (constant size), dabs

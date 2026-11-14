@@ -50,11 +50,35 @@ For one stroke with opacity O and density D, at a pixel covered by n of that str
   - Pixels within 0.15 px of a dab edge are 88–92 % exact. They depend on the open AA None
     edge rule (B-001/B-002), not on accumulation.
 
+## Follow-up 2026-11-13 (run 2): how a stroke is committed to an 8-bit layer
+Method: automated-Wine + virtual stylus, observer Claude. Size 40, AA None, hardness 5,
+density 100, **opacity 10**, gap Normal, adjust density by gap off, ▲ 800×800 transparent
+canvas. `tools/observe/brush_run2.py layers`: 25 separate horizontal strokes on y = 200.5;
+stroke k runs from x = 40.5 + 20k to 560.5, so the column x = 10 + 20n lies under exactly n strokes.
+Export `data/B003_layers_op10.png`, analysis `tools/observe/b003_layers_analyze.py
+data/B003_layers_op10.png`.
+
+Observed levels for n = 1 … 25: 25, 48, 69, 88, 105, 120, 134, 146, 157, 167, 176, 184, 191, 197,
+203, 208, 213, 217, 221, 224, 227, 230, 233, 235, 237.
+
+| model | matches (of 25) |
+|---|---|
+| A' = A + a8 − ⌊A·a8/255⌋ (8-bit, run-1 implementation) | 13 (fails from n = 14) |
+| float layer, ⌊65535·(1 − 0.9ⁿ)⌋ >> 8 | 16 |
+| ⌊65535·(1 − (1 − A/255)(1 − a))⌋ >> 8 per stroke | 4 |
+| **A' = A + ⌊(255 − A)·a + 0.5⌋ for A > 0; an empty pixel gets ⌊65535·a⌋ >> 8** | **25** |
+
+So **the layer stores 8 bits, and each stroke is composited with its unquantised alpha a = O·B**:
+the increment (255 − A)·a is rounded half up, except on a fully transparent pixel, where the
+stroke alpha is truncated as in run 1 (25, not 26, for a = 0.1). The same rule gives the run-1
+stroke-over-stroke levels (63 → 111, 95 → 135, 127 → 191) and B-008's opacity-50 alpha over
+every backdrop level 1 … 255.
+
 ## Open questions
 - AA Weak/Middle/Strong edges and soft tips: presumably c·D per dab with the same buffer.
   Not yet verified.
-- Whether the truncation to 8 bits happens on export only or in the layer itself. It
-  matters for many-stroke builds; test by laying many O = 10 % strokes over one another.
+- (Answered in run 2: the layer is 8-bit; strokes composite with their unquantised alpha,
+  increment rounded half up; see the follow-up.)
 - Other ink modes (B-008) and layer opacity/blend interaction are not covered.
 
 ## Implementation (2026-11-13, M4)
