@@ -16,6 +16,10 @@ The server speaks MCP over stdio, and logs go to stderr. It runs in one of two m
 
 ## Running it
 
+Release builds include `brushye-mcp` (`brushye-mcp.exe` on Windows) next to `brushye-app`
+in the Windows `.zip` and in the Linux and macOS `.tar.gz`. The Linux AppImage starts only the
+app, so on Linux use the binary from the `.tar.gz`. From source:
+
 ```sh
 cargo build --release -p brushye-mcp      # target/release/brushye-mcp
 ```

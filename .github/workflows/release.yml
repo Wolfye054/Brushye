@@ -1,6 +1,6 @@
 name: Release builds
 
-# Builds the app and CLI on Windows, macOS and Linux: a .zip for Windows, an AppImage and a
+# Builds the app, the CLI and the MCP server (brushye-mcp) on Windows, macOS and Linux: a .zip for Windows, an AppImage and a
 # .tar.gz for Linux, a .tar.gz for macOS. Pushing a tag v* also creates a DRAFT GitHub release
 # with them attached; the maintainer reviews and publishes it.
 on:
@@ -31,14 +31,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: build
-        run: cargo build --release --locked -p brushye-app -p brushye-cli
+        run: cargo build --release --locked -p brushye-app -p brushye-cli -p brushye-mcp
       - name: package
         shell: bash
         run: |
           dir="brushye-${GITHUB_REF_NAME//\//-}-${{ matrix.name }}"
           mkdir -p "$dir"
           ext=""; [ "${{ runner.os }}" = "Windows" ] && ext=".exe"
-          cp "target/release/brushye-app$ext" "target/release/brushye$ext" "$dir/"
+          cp "target/release/brushye-app$ext" "target/release/brushye$ext" "target/release/brushye-mcp$ext" "$dir/"
           cp LICENSE-MIT LICENSE-APACHE "$dir/"
           cp crates/brushye-app/assets/fonts/LICENSE-GoFonts.txt crates/brushye-app/assets/fonts/LICENSE-Phosphor.txt "$dir/"
           if [ "${{ runner.os }}" = "Windows" ]; then
@@ -61,7 +61,7 @@ jobs:
           chmod +x appimagetool
           app=Brushye.AppDir
           mkdir -p "$app/usr/bin" "$app/usr/share/applications" "$app/usr/share/icons/hicolor/256x256/apps" "$app/usr/share/doc/brushye"
-          cp target/release/brushye-app target/release/brushye "$app/usr/bin/"
+          cp target/release/brushye-app target/release/brushye target/release/brushye-mcp "$app/usr/bin/"
           cp packaging/linux/brushye.desktop "$app/"
           cp packaging/linux/brushye.desktop "$app/usr/share/applications/"
           cp crates/brushye-app/assets/icon/brushye.png "$app/brushye.png"
