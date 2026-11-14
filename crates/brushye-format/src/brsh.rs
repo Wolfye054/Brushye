@@ -28,7 +28,7 @@ use zip::{CompressionMethod, DateTime, ZipArchive, ZipWriter};
 use crate::png_io;
 
 /// Current `.brsh` format version.
-pub const FORMAT_VERSION: u32 = 1;
+pub const FORMAT_VERSION: u32 = 2;
 /// Format id in `manifest.json`.
 pub const FORMAT_ID: &str = "brushye-document";
 /// zstd level for tiles: fast saves (D-014).
@@ -155,6 +155,9 @@ pub fn document_json(doc: &Document, active: Option<LayerId>) -> Json {
             "blend": l.blend.name(),
             "locked": l.locked,
             "lock_alpha": l.lock_alpha,
+            "parent": l.parent.map(|p| p.to_string()),
+            "clip": l.clip,
+            "expanded": l.expanded,
         })).collect::<Vec<_>>(),
     })
 }
@@ -313,8 +316,31 @@ pub type Entries = BTreeMap<String, Vec<u8>>;
 /// A migration from format version `n` to `n + 1`, applied to the raw entries.
 pub type Migration = (u32, fn(&mut Entries) -> Result<(), String>);
 
-/// All format migrations (none yet: every file is version 1).
-pub const MIGRATIONS: &[Migration] = &[];
+/// All format migrations.
+pub const MIGRATIONS: &[Migration] = &[(1, migrate_v1_to_v2)];
+
+/// v1 → v2 (D-023): layers gain `parent` (null), `clip` (false) and `expanded` (true).
+fn migrate_v1_to_v2(e: &mut Entries) -> Result<(), String> {
+    let raw = e.get("document.json").ok_or("missing document.json")?;
+    let mut doc: Json = serde_json::from_slice(raw).map_err(|x| x.to_string())?;
+    let layers = doc
+        .get_mut("layers")
+        .and_then(Json::as_array_mut)
+        .ok_or("document.json: \"layers\" must be an array")?;
+    for l in layers {
+        let m = l
+            .as_object_mut()
+            .ok_or("document.json: a layer is not an object")?;
+        m.insert("parent".into(), Json::Null);
+        m.insert("clip".into(), Json::Bool(false));
+        m.insert("expanded".into(), Json::Bool(true));
+    }
+    e.insert(
+        "document.json".into(),
+        serde_json::to_vec(&doc).map_err(|x| x.to_string())?,
+    );
+    Ok(())
+}
 
 fn read_entries(bytes: &[u8]) -> Result<Entries, BrshError> {
     let mut za = ZipArchive::new(Cursor::new(bytes)).map_err(err)?;
@@ -531,6 +557,15 @@ pub fn load(bytes: &[u8], strict: bool) -> Result<Loaded, BrshError> {
         layer.blend = blend;
         layer.locked = lf.bool("locked")?;
         layer.lock_alpha = lf.bool("lock_alpha")?;
+        layer.parent = match lf.get("parent") {
+            None => None,
+            Some(Json::String(s)) => {
+                Some(parse_layer_id(s).ok_or_else(|| err(format!("{id}: bad parent {s:?}")))?)
+            }
+            Some(_) => return Err(err(format!("{id}: \"parent\" must be a layer id or null"))),
+        };
+        layer.clip = lf.bool("clip")?;
+        layer.expanded = lf.bool("expanded")?;
         lf.unknown(&mut warnings);
 
         let dir = layer_dir(id);
@@ -572,8 +607,12 @@ pub fn load(bytes: &[u8], strict: bool) -> Result<Loaded, BrshError> {
             known.push(name.clone());
         }
         layer.tiles.prune();
-        doc.add_layer(layer, None).map_err(err)?;
+        if layer.is_folder() && !layer.tiles.is_empty() {
+            return Err(err(format!("{id}: a folder can't have tiles")));
+        }
+        doc.push_layer_raw(layer).map_err(err)?;
     }
+    doc.check_structure().map_err(err)?;
     if let Some(a) = active
         && doc.layer(a).is_none()
     {

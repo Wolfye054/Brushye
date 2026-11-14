@@ -190,7 +190,8 @@ fn newer_versions_are_refused_and_bad_files_rejected() {
     });
     let msg = load_err(&e, false);
     assert!(
-        msg.contains("format version 2") && msg.contains("Update Brushye"),
+        msg.contains(&format!("format version {}", brsh::FORMAT_VERSION + 1))
+            && msg.contains("Update Brushye"),
         "{msg}"
     );
 
@@ -230,6 +231,46 @@ fn newer_versions_are_refused_and_bad_files_rejected() {
     });
     assert!(load_err(&e, false).contains("active layer L99"));
     assert!(brsh::load(b"not a zip", false).is_err());
+}
+
+/// Folders, Through, clipping and folder open/closed survive a save and load (format v2).
+#[test]
+fn folder_structure_round_trips() {
+    let mut s = Session::new();
+    run(
+        &mut s,
+        "doc.new 64 64\nlayer.new L1\nlayer.fill L1 color=#204080\nlayer.new L2\n\
+         layer.fill L2 color=#ff000080\nlayer.group L10 layer=L2\nlayer.new L3 into=L10\n\
+         layer.fill L3 color=#00ff00\nlayer.set L3 clip=true\nlayer.set L10 blend=through\n\
+         layer.expand L10 open=false",
+    );
+    let bytes = save(&s, false);
+    let l = brsh::load(&bytes, true).unwrap_or_else(|e| panic!("{e}"));
+    let want = s.document().unwrap_or_else(|| panic!("no doc"));
+    assert_eq!(l.doc, *want);
+    assert_eq!(l.doc.content_hash(), want.content_hash());
+    let f = l
+        .doc
+        .layer(brushye_command::core::LayerId(10))
+        .unwrap_or_else(|| panic!("F10"));
+    assert!(f.is_folder() && !f.expanded);
+
+    // A broken structure is refused: a layer above its own folder.
+    let mut e = entries(&bytes);
+    edit_json(&mut e, "document.json", |m| {
+        let layers = m.get_mut("layers").and_then(Json::as_array_mut);
+        if let Some(top) = layers
+            .and_then(|a| a.last_mut())
+            .and_then(Json::as_object_mut)
+        {
+            top.insert("parent".into(), Json::from("L1"));
+        }
+    });
+    assert!(
+        load_err(&e, false).contains("layer structure"),
+        "{}",
+        load_err(&e, false)
+    );
 }
 
 #[test]
@@ -390,6 +431,34 @@ mod golden {
         let mut r =
             Session::replay(&l.journal.unwrap_or_default()).unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(hash(&mut r), "5b40bbe6cd65fc70");
+    }
+
+    /// Format 2 (D-023): folders, Through, clipping, a closed folder.
+    #[test]
+    fn golden_v2_document_opens_and_replays() {
+        let l = brsh::load(&data("golden_v2.brsh"), true).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(l.file_version, 2);
+        assert_eq!(format!("{:016x}", l.doc.content_hash()), "e2216651ff3431e3");
+        let tree: Vec<(String, Option<String>)> = l
+            .doc
+            .layers()
+            .iter()
+            .map(|x| (x.id.to_string(), x.parent.map(|p| p.to_string())))
+            .collect();
+        assert_eq!(
+            tree,
+            [
+                ("L1".into(), None),
+                ("L2".into(), Some("L10".into())),
+                ("L3".into(), Some("L10".into())),
+                ("L10".into(), None)
+            ]
+        );
+        assert_eq!(l.active.map(|a| a.to_string()), Some("L3".into()));
+        // The embedded journal replays to the saved document (D-021 applies to its stroke).
+        let mut r =
+            Session::replay(&l.journal.unwrap_or_default()).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(hash(&mut r), "e2216651ff3431e3");
     }
 
     #[test]

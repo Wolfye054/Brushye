@@ -1,0 +1,13 @@
+doc.new 300 200 paper=#f0e8d8
+layer.new L1 name="Base"
+layer.fill L1 color=#3060a0
+layer.new L2 name="Shade"
+brush.stroke L2 color=#202020 size=24 samples=[20,100,1,0;280,120,1,20000]
+layer.set L2 blend=multiply
+layer.group L10 layer=L2 name="Folder"
+layer.new L3 into=L10 name="Clipped"
+layer.fill L3 color=#ff800080
+layer.set L3 clip=true
+layer.set L10 blend=through opacity=60
+layer.expand L10 open=false
+layer.select L3

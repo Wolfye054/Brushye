@@ -311,6 +311,16 @@ impl Document {
         Ok(())
     }
 
+    /// Append a layer on top **as is** (its `parent` kept), for loaders that rebuild a stored
+    /// list bottom to top. Call [`Document::check_structure`] afterwards.
+    pub fn push_layer_raw(&mut self, layer: Layer) -> Result<(), DocError> {
+        if self.layer(layer.id).is_some() {
+            return Err(DocError::DuplicateLayerId(layer.id));
+        }
+        self.layers.push(Arc::new(layer));
+        Ok(())
+    }
+
     /// Remove a layer; a folder is removed with everything in it. Returns the removed layer.
     pub fn remove_layer(&mut self, id: LayerId) -> Result<Layer, DocError> {
         let r = self.subtree(id)?;

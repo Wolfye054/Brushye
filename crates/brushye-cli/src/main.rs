@@ -283,6 +283,7 @@ fn cmd_dump(args: &[String]) -> Result<(), Fail> {
                 "id": layer.id.to_string(), "name": layer.name, "kind": layer.kind.name(),
                 "visible": layer.visible, "opacity": layer.opacity, "blend": layer.blend.name(),
                 "locked": layer.locked, "lock_alpha": layer.lock_alpha,
+                "parent": layer.parent.map(|p| p.to_string()), "clip": layer.clip,
                 "tiles": tiles, "tile_bytes": stored, "pixel_bytes": tiles * 256 * 256 * 4,
                 "zip_raw_bytes": raw,
             })
