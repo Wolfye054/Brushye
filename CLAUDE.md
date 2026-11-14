@@ -121,10 +121,12 @@ command layer. Nothing changes state outside it.
   brushye-format, brushye-app, brushye-cli, plus brushye-tablet (M1). Only brushye-app and
   brushye-tablet may use UI/GPU/OS-input crates. Crates are created as their milestone starts
   (now: brushye-core, brushye-command, brushye-format, brushye-cli, brushye-tablet, brushye-app,
-  brushye-sut;
+  brushye-sut, brushye-mcp;
   run the app with `cargo app`).
 - `docs/command-format.md`: the exact command text grammar (D-011).
 - `docs/native-format.md`: the exact `.brsh` / `.brshbrush` layout (D-014).
+- `docs/mcp.md`: the MCP server's tools and setup (M9).
+- `examples/scripts/`: example command scripts (a test keeps them runnable).
 - `docs/reports/`: milestone reports.
 
 ## Current status
@@ -140,8 +142,9 @@ brushes) is done. M6 (app shell, GPU canvas display, live strokes, CSP 1.13.2 la
 the maintainer's pen test passed. M7 (brush editor + alpha polish) is done, including D-018
 (tool state as commands) and D-019 (native file dialogs); the maintainer tested it and
 v0.1.0-alpha is tagged. M8 (.sut import, crate brushye-sut) is done; open engine item: anti-aliased
-thin tips (B-014). D-021: before 1.0, brush fidelity fixes may change journal replay. Next: M9
-(MCP server). New architectural decisions still
+thin tips (B-014). D-021: before 1.0, brush fidelity fixes may change journal replay. M9 (MCP server) is in
+progress: the headless stdio server `brushye-mcp` and script examples are in; the journal viewer
+and attaching to the running app are open. New architectural decisions still
 need maintainer approval first (see Working agreement). Never copy code from the maintainer's
 other projects (photocraft, clipcraft); design ideas only.
 
