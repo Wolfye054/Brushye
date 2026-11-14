@@ -659,7 +659,22 @@ fn brush_settings(p: &commands::BrushStroke) -> Result<BrushSettings, ExecError>
         hardness: p.hardness.unwrap_or(HARDNESS_MAX),
         density: pct("density", p.density, 1.0)?,
         opacity: pct("opacity", p.opacity, 1.0)?,
+        ink: p.ink.unwrap_or_default(),
         gap: p.gap.unwrap_or_default(),
+        density_by_gap: p.density_by_gap.unwrap_or(false),
+        thickness: match p.thickness {
+            None => 1.0,
+            Some(t @ 1..=100) => f64::from(t) / 100.0,
+            Some(t) => {
+                return Err(ExecError(format!(
+                    "brush.stroke: thickness {t} is not in 1..=100"
+                )));
+            }
+        },
+        tip_axis: p.direction.unwrap_or_default(),
+        angle: p.angle.unwrap_or(0.0),
+        angle_follows_line: p.angle_line.unwrap_or(false),
+        stabilization: p.stabilization.unwrap_or(0),
         size_pressure: dynamics("size", p.size_pressure, &p.size_curve)?,
         opacity_pressure: dynamics("opacity", p.opacity_pressure, &p.opacity_curve)?,
         density_pressure: dynamics("density", p.density_pressure, &p.density_curve)?,

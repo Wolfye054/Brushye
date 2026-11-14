@@ -296,6 +296,9 @@ doc.new 64 48 paper=none
 layer.new L1
 brush.stroke L1 color=#203040 size=9.5 aa=weak opacity=80 density=60 gap=wide size_pressure=20 size_curve=[0.5,0.25] samples=[4,4,0.2,0;30,10.5,0.9,8000;50,40,0.5,16000]
 brush.stroke L1 color=#ff0000 size=12 hardness=2 gap=37 samples=[10,40,1,0;40,20,1,5000]
+brush.stroke L1 color=#00ff00 size=14 aa=none thickness=30 angle_line=true stabilization=6 ink=multiply density_by_gap=true samples=[5,30,1,0;20,35,1,4000;35,25,1,8000;50,30,1,12000]
+brush.stroke L1 color=#000000 size=8 ink=erase opacity=50 samples=[0,0,1,0;60,45,1,9000]
+brush.stroke L1 color=#8040c0 size=20 hardness=3 thickness=50 angle=30 direction=horizontal samples=[32,24,0.7,0]
 ";
 
 #[test]
@@ -318,7 +321,10 @@ fn brush_strokes_replay_undo_and_print_samples_as_blobs() {
     assert_eq!(r.journal_text(), journal);
     // Ink landed, and each stroke is one undo step.
     assert_ne!(q(&mut s, "?layer.pixel L1 x=30 y=10")[3], 0);
-    run(&mut s, "history.undo\nhistory.undo");
+    run(
+        &mut s,
+        "history.undo\nhistory.undo\nhistory.undo\nhistory.undo\nhistory.undo",
+    );
     assert_eq!(q(&mut s, "?layer.get L1")["tiles"], 0);
 }
 
@@ -334,6 +340,9 @@ fn brush_stroke_rejects_bad_settings_without_side_effects() {
         "brush.stroke L1 color=#000000 size=5 size_curve=[0.5,0.2] samples=[1,1,1,0]",
         "brush.stroke L1 color=#000000 size=5 size_pressure=0 size_curve=[0.5,0.2;0.4,0.3] samples=[1,1,1,0]",
         "brush.stroke L1 color=#000000 size=5 gap=huge samples=[1,1,1,0]",
+        "brush.stroke L1 color=#000000 size=5 thickness=0 samples=[1,1,1,0]",
+        "brush.stroke L1 color=#000000 size=5 stabilization=101 samples=[1,1,1,0]",
+        "brush.stroke L1 color=#000000 size=5 ink=smudge samples=[1,1,1,0]",
         "brush.stroke L1 color=#000000 size=5 samples=[]",
         "brush.stroke L9 color=#000000 size=5 samples=[1,1,1,0]",
     ] {
@@ -372,7 +381,7 @@ fn brush_stroke_respects_lock_transparency() {
 fn golden_brush_hash_is_platform_independent() {
     let mut s = Session::new();
     run(&mut s, STROKE);
-    assert_eq!(q(&mut s, "?doc.hash"), "cc2408a09a327ca2");
+    assert_eq!(q(&mut s, "?doc.hash"), "a9b915a093a070cf");
 }
 
 #[test]
@@ -558,7 +567,14 @@ mod roundtrip {
                             hardness,
                             opacity: None,
                             density: Some(50),
+                            ink: None,
                             gap,
+                            density_by_gap: None,
+                            thickness: Some(40),
+                            direction: None,
+                            angle: Some(22.5),
+                            angle_line: Some(true),
+                            stabilization: Some(5),
                             size_pressure,
                             size_curve: curve,
                             opacity_pressure: None,

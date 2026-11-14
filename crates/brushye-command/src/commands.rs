@@ -1,7 +1,7 @@
 //! The command and query registry (M2 set). Each entry declares its name, version, class and
 //! typed parameters; parsing, printing, JSON and the schema all derive from it (D-011).
 
-use brushye_core::brush::{Aa, Curve, Gap};
+use brushye_core::brush::{Aa, Curve, Gap, InkMode, TipAxis};
 use brushye_core::{BlendMode, LayerId, LayerKind, Rgba8};
 use serde_json::{Value as Json, json};
 
@@ -192,7 +192,14 @@ params! {
         hardness: Option<u8> = opt "Tip hardness 1 (soft) ..= 5 (hard, default)",
         opacity: Option<u8> = opt "Ink opacity in percent (default 100)",
         density: Option<u8> = opt "Brush density in percent (default 100)",
+        ink: Option<InkMode> = opt "Ink blending mode (default normal): the layer modes plus erase, background, replace_alpha, compare_density, erase_compare, black_burn, white_burn",
         gap: Option<Gap> = opt "Dab gap: narrow, normal (default), wide, or percent of size",
+        density_by_gap: Option<bool> = opt "Adjust brush density by gap",
+        thickness: Option<u8> = opt "Tip thickness in percent, 1..=100 (default 100 = round)",
+        direction: Option<TipAxis> = opt "Axis that thickness shortens (default vertical)",
+        angle: Option<f64> = opt "Tip angle in degrees, clockwise (default 0)",
+        angle_line: Option<bool> = opt "Tip angle follows the direction of the line",
+        stabilization: Option<u8> = opt "Stabilization 0..=100 (default 0)",
         size_pressure: Option<u8> = opt "Pen pressure controls size; minimum in percent",
         size_curve: Option<Curve> = opt "Size pressure curve points [x,y;…]",
         opacity_pressure: Option<u8> = opt "Pen pressure controls opacity; minimum in percent",

@@ -266,6 +266,11 @@ macro_rules! word_arg {
 
 word_arg!(BlendMode, "blend mode");
 word_arg!(LayerKind, "layer kind");
+word_arg!(brushye_core::brush::InkMode, "ink mode");
+word_arg!(
+    brushye_core::brush::TipAxis,
+    "tip direction (vertical|horizontal)"
+);
 word_arg!(
     brushye_core::brush::Aa,
     "anti-aliasing (none|weak|middle|strong)"
