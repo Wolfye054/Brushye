@@ -99,8 +99,8 @@ attach mode. Report: `docs/reports/M9-mcp-server.md`.
   D-022); script examples; journal viewer (CLI and app window).
 
 ## M10 — Post-alpha painting features
-**Part 1 (proposed, D-023 PROPOSAL):** layer structure: folders and Through, clip to layer below,
-layer masks; observation specs L-008, U-014, H-002 first for masks.
+**Part 1 (in progress, D-023 accepted):** layer structure 1:1 with CSP: folders and Through, clip
+to layer below, layer masks. Observation first: L-008 masks, U-014 palette, H-002 history, open L-004/L-006 cases.
 - Folders + Through mode, clipping, masks, locks, selections, fill, gradient, transform,
   colour mixing (Blend/Running/Smear), texture, spray, dual brush, starting/ending,
   watercolor edge, PSD import/export, workspace/shortcut customization.
