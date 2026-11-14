@@ -60,6 +60,10 @@ pub struct Upload {
 pub struct Display {
     size: (u32, u32),
     sigs: HashMap<TileKey, Sig>,
+    /// The composited pixels of every tile (for the navigator and the eyedropper).
+    tiles: HashMap<TileKey, Upload>,
+    /// Increases whenever any tile changes.
+    pub generation: u64,
 }
 
 impl Display {
@@ -69,6 +73,7 @@ impl Display {
         let reset = self.size != (doc.width, doc.height);
         if reset {
             self.sigs.clear();
+            self.tiles.clear();
             self.size = (doc.width, doc.height);
         }
         let ts = TILE_SIZE as u32;
@@ -97,16 +102,37 @@ impl Display {
                 let (x0, y0) = (tx * ts, ty * ts);
                 let (w, h) = (ts.min(doc.width - x0), ts.min(doc.height - y0));
                 let img = flatten_rect(doc, x0, y0, w, h);
-                out.push(Upload {
+                let u = Upload {
                     key,
                     w,
                     h,
                     px: Arc::new(img.px),
-                });
+                };
+                self.tiles.insert(key, u.clone());
+                out.push(u);
                 self.sigs.insert(key, sig);
             }
         }
+        if !out.is_empty() {
+            self.generation += 1;
+        }
         (out, reset)
+    }
+
+    /// The displayed (flattened) pixel at canvas (x, y).
+    pub fn pixel(&self, x: u32, y: u32) -> Option<[u8; 4]> {
+        let ts = TILE_SIZE as u32;
+        let u = self.tiles.get(&((x / ts) as i32, (y / ts) as i32))?;
+        let (ix, iy) = (x % ts, y % ts);
+        if ix >= u.w || iy >= u.h {
+            return None;
+        }
+        let i = ((iy * u.w + ix) * 4) as usize;
+        Some([u.px[i], u.px[i + 1], u.px[i + 2], u.px[i + 3]])
+    }
+
+    pub fn size(&self) -> (u32, u32) {
+        self.size
     }
 }
 

@@ -8,6 +8,6 @@ pub mod curve_editor;
 pub mod display;
 pub mod fonts;
 pub mod icons;
-mod panels;
 pub mod settings;
+pub mod ui;
 pub mod view;

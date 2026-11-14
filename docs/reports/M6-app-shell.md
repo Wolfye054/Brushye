@@ -94,6 +94,15 @@ Run it with `cargo app` (release build), or `cargo app path/to/file.brsh`.
   observation run is recording CSP's default workspace (specs `specs/behavior/ui/`). The UI
   described above is being rebuilt to match it, with Phosphor icons instead of CSP's.
 
+## CSP 1.13.2 layout and look (maintainer priority)
+The UI was rebuilt from the observed specs U-001 … U-009 (`specs/behavior/ui/`): CSP's default
+workspace regions, palette order and sizes, menus, command bar, tool column, Sub Tool / Tool
+property / Brush size / colour palettes, Navigator, Layer Property and Layer palettes, status
+strip and the measured Dark/Light colours. Icons are Phosphor. The tools are CSP's 23 in its
+order; Zoom, Hand, Eyedropper, Pen, Pencil, Brush, Airbrush and Eraser work, the rest are
+disabled in place. Sub tools are Brushye's own presets, saved per user. The spec README lists
+what's still missing.
+
 ## Proposed next step
 After the pen test and that decision: M7, the brush editor and alpha polish (curve editor,
 main/sub colours, brush-size palette, global pressure adjustment, autosave).

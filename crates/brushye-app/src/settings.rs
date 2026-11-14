@@ -30,6 +30,12 @@ pub fn config_dir() -> PathBuf {
 pub struct Settings {
     /// Global pen pressure curve: interior control points.
     pub pressure_curve: Vec<[f64; 2]>,
+    /// Interface colour: "dark" (default) or "light".
+    pub interface: String,
+    /// Recently used files, newest first.
+    pub recent: Vec<String>,
+    /// Sub tools per brush tool (see `ui::tools::to_json`).
+    pub subtools: serde_json::Map<String, Json>,
 }
 
 impl Settings {
@@ -53,13 +59,30 @@ impl Settings {
                     .collect()
             })
             .unwrap_or_default();
-        Self { pressure_curve }
+        Self {
+            pressure_curve,
+            interface: j["interface"].as_str().unwrap_or("dark").to_owned(),
+            recent: j["recent"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(str::to_owned))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            subtools: j["subtools"].as_object().cloned().unwrap_or_default(),
+        }
     }
 
     pub fn save(&self) -> Result<(), String> {
         let dir = config_dir();
         std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-        let j = json!({ "pressure_curve": self.pressure_curve });
+        let j = json!({
+            "pressure_curve": self.pressure_curve,
+            "interface": self.interface,
+            "recent": self.recent,
+            "subtools": self.subtools,
+        });
         let text = serde_json::to_string_pretty(&j).map_err(|e| e.to_string())?;
         brushye_format::brsh::write_atomic(&Self::path(), text.as_bytes())
             .map_err(|e| e.to_string())
