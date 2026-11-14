@@ -506,3 +506,42 @@ crates/
   (rounding), so CSP parity fails.
 - **Reason:** exact CSP parity now, without guessing internals; every remaining gap is
   measurable, tracked, and scheduled for observation before the compositor is built.
+
+## D-018 Tool and sub tool state as commands — PROPOSAL (2026-11-13)
+- **Date:** proposed 2026-11-13. Needs maintainer approval (command layer).
+- **Problem:** CLAUDE.md requires every change to document *or application* state to be a
+  command. Since M7 the app keeps the tool set (tools, sub tool groups, sub tools and their
+  brush presets, the shown-row lists, locks, user defaults), the current tool and sub tool,
+  and the main/sub colour chips in `brushye-app` (`ui/tools.rs`), saved in `settings.json`.
+  Editing them doesn't go through the command layer, so it can't be journaled, replayed,
+  scripted or reached from the MCP server. Strokes are unaffected: `brush.stroke` already
+  carries every setting, so documents replay exactly.
+- **Proposal:**
+  1. Move the tool set model (no UI types) from `brushye-app` into `brushye-command`, beside
+     `BrushPreset`.
+  2. Add AppState commands (not undoable, as in CSP, where sub tool edits are not on the
+     History): `tool.select`, `subtool.select`, `subtool.set` (any `brush.stroke` setting
+     key, plus `name`), `subtool.copy`, `subtool.delete`, `subtool.move`, `subtool.lock`,
+     `subtool.reset`, `subtool.save_default`, `subtool.show_row`, `color.set` (main/sub/
+     transparent) and `color.active`.
+  3. Add queries: `q.tools`, `q.subtool`, `q.color`.
+  4. The app's palettes and the Sub Tool Detail window issue these commands instead of
+     changing the model directly. `settings.json` stays the place the tool set is saved.
+- **Alternatives:**
+  - Leave tool state in the app. That is simpler, but it breaks the core rule, and scripts
+    and AI clients couldn't create or edit brushes the way the UI does.
+  - Make sub tool edits undoable. CSP doesn't, and mixing them with document undo would be
+    confusing.
+- **Cost:** about 1–2 days. It mostly moves code and adds commands, tests and docs.
+
+## D-019 Native file dialogs: `rfd` — PROPOSAL (2026-11-13)
+- **Date:** proposed 2026-11-13. Needs maintainer approval (new dependency, D-016 policy).
+- **Problem:** Open, Save As, Export and Import Brush use an in-app path text field. CSP uses
+  the OS file dialogs.
+- **Proposal:** add `rfd` (MIT, the standard Rust crate for native file dialogs) to
+  `brushye-app` only. It covers Windows (IFileDialog), macOS (NSOpenPanel) and Linux (XDG
+  desktop portal, with no GTK dependency when built with the `xdg-portal` feature). The
+  in-app path field stays as the fallback when no portal is available.
+- **Alternatives:**
+  - Keep the text field. That is clumsy, and unlike CSP.
+  - Write per-OS dialog code ourselves. That is a lot of unsafe FFI for no gain.

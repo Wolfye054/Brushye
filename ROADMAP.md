@@ -71,6 +71,8 @@ Ordering follows CLAUDE.md's priorities: command layer → brush engine → .sut
 - **Exit:** the maintainer draws comfortably with pressure on their main OS.
 
 ## M7 — Brush editor + alpha polish → **ALPHA**
+**Status (2026-11-13): feature work done; waiting on D-018 (tool state as commands) and D-019
+(native file dialogs), then the maintainer's test. See docs/reports/M7-brush-editor.md.**
 - Brush editor (Sub Tool Detail equivalent) for all alpha brush settings; create, duplicate
   and save brushes; a set of original default brushes.
 - Every alpha feature reachable headless via commands; the CLI documents every command.
