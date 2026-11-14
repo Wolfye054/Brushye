@@ -131,6 +131,12 @@ fn menu(app: &mut App, ui: &mut egui::Ui) {
                 app.dialog = Some(app.save_as_dialog());
             }
             ui.separator();
+            if ui.button("Pen pressure settings…").clicked() {
+                app.dialog = Some(Dialog::PenPressure {
+                    points: app.settings.pressure_curve.clone(),
+                });
+            }
+            ui.separator();
             if ui.button("Export PNG…").clicked() {
                 let path = app
                     .path
@@ -593,6 +599,7 @@ fn dialogs(app: &mut App, ctx: &egui::Context) {
         Dialog::Open { .. } => "Open",
         Dialog::SaveAs { .. } => "Save as",
         Dialog::ExportPng { .. } => "Export PNG",
+        Dialog::PenPressure { .. } => "Pen pressure settings",
         Dialog::Confirm(_) => "Unsaved changes",
     };
     egui::Window::new(title)
@@ -664,6 +671,24 @@ fn dialogs(app: &mut App, ctx: &egui::Context) {
                     app.export_png(&p);
                     done = true;
                 }
+            }
+            Dialog::PenPressure { points } => {
+                ui.label("Global pen pressure curve: applied to the pen's raw pressure before each brush setting's own curve.");
+                ui.label("Drag points; click to add, right-click to remove.");
+                crate::curve_editor::curve_editor(ui, ui.scope_id().with("global-pressure"), points, 240.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Reset to default").clicked() {
+                        points.clear();
+                    }
+                    if ui.button("OK").clicked() {
+                        let p = points.clone();
+                        app.set_pressure_curve(p);
+                        done = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        done = true;
+                    }
+                });
             }
             Dialog::Confirm(action) => {
                 ui.label("The document has unsaved changes. Discard them?");

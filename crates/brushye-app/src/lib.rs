@@ -4,6 +4,10 @@
 
 pub mod app;
 pub mod canvas_gpu;
+pub mod curve_editor;
 pub mod display;
+pub mod fonts;
+pub mod icons;
 mod panels;
+pub mod settings;
 pub mod view;

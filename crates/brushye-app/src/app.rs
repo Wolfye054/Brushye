@@ -72,6 +72,10 @@ pub enum Dialog {
     ExportPng {
         path: String,
     },
+    /// Global pen pressure curve (CSP: File > Pen Pressure Settings).
+    PenPressure {
+        points: Vec<[f64; 2]>,
+    },
     /// Discard unsaved changes, then run the action.
     Confirm(Box<Action>),
 }
@@ -116,6 +120,7 @@ pub struct App {
     pub(crate) shown_title: String,
     pub(crate) brush_dir: String,
     pub(crate) brush_name: String,
+    pub(crate) settings: crate::settings::Settings,
 }
 
 fn default_pen() -> BrushPreset {
@@ -152,27 +157,44 @@ fn default_eraser() -> BrushPreset {
 
 /// Default brush library folder (per-user configuration directory).
 fn default_brush_dir() -> String {
-    let base = if cfg!(windows) {
-        std::env::var("APPDATA").ok().map(PathBuf::from)
-    } else if cfg!(target_os = "macos") {
-        std::env::var("HOME")
-            .ok()
-            .map(|h| PathBuf::from(h).join("Library/Application Support"))
-    } else {
-        std::env::var("XDG_CONFIG_HOME")
-            .ok()
-            .map(PathBuf::from)
-            .or_else(|| {
-                std::env::var("HOME")
-                    .ok()
-                    .map(|h| PathBuf::from(h).join(".config"))
-            })
-    };
-    base.unwrap_or_else(|| PathBuf::from("."))
-        .join("brushye")
+    crate::settings::config_dir()
         .join("brushes")
         .to_string_lossy()
         .into_owned()
+}
+
+/// Apply the user's application settings to a session as commands (so they're journaled).
+fn apply_settings(s: &mut Session, settings: &crate::settings::Settings) {
+    if settings.pressure_curve.is_empty() {
+        return;
+    }
+    if let Ok(points) = brushye_command::core::brush::Curve::new(settings.pressure_curve.clone()) {
+        let _ = s.execute(Command::InputPressureCurve(commands::InputPressureCurve {
+            points,
+        }));
+    }
+}
+
+impl App {
+    /// Set the global pen pressure curve: a command for this session, and the saved setting
+    /// for later ones.
+    pub(crate) fn set_pressure_curve(&mut self, points: Vec<[f64; 2]>) {
+        let curve = match brushye_command::core::brush::Curve::new(points.clone()) {
+            Ok(c) => c,
+            Err(e) => {
+                self.status = e.to_string();
+                return;
+            }
+        };
+        if self.exec(Command::InputPressureCurve(commands::InputPressureCurve {
+            points: curve,
+        })) {
+            self.settings.pressure_curve = points;
+            if let Err(e) = self.settings.save() {
+                self.status = format!("Couldn't save settings: {e}");
+            }
+        }
+    }
 }
 
 /// A fresh session with a document like CSP's default: white paper and one raster layer.
@@ -188,6 +210,7 @@ pub fn new_session(width: u32, height: u32, dpi: u32, paper: bool) -> Result<Ses
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, open: Option<PathBuf>) -> Self {
+        crate::fonts::install(&cc.egui_ctx);
         let mut adapter = String::new();
         let gpu_ready = if let Some(rs) = cc.wgpu_render_state.as_ref() {
             let info = rs.adapter.get_info();
@@ -203,7 +226,9 @@ impl App {
             let ctx = cc.egui_ctx.clone();
             t.set_waker(Arc::new(move || ctx.request_repaint()));
         }
-        let session = new_session(1920, 1080, 72, true).unwrap_or_else(|_| Session::new());
+        let settings = crate::settings::Settings::load();
+        let mut session = new_session(1920, 1080, 72, true).unwrap_or_else(|_| Session::new());
+        apply_settings(&mut session, &settings);
         let mut app = Self {
             saved_len: session.journal_len(),
             session,
@@ -236,6 +261,7 @@ impl App {
             shown_title: String::new(),
             brush_dir: default_brush_dir(),
             brush_name: String::new(),
+            settings,
         };
         app.status = if gpu_ready {
             format!("GPU: {adapter}")
@@ -291,7 +317,8 @@ impl App {
         }
     }
 
-    fn replace_session(&mut self, s: Session, path: Option<PathBuf>) {
+    fn replace_session(&mut self, mut s: Session, path: Option<PathBuf>) {
+        apply_settings(&mut s, &self.settings);
         self.live = None;
         self.saved_len = s.journal_len();
         self.session = s;
@@ -498,7 +525,7 @@ impl App {
             let c = self.color;
             (self.pen_preset.clone(), [c.r(), c.g(), c.b()])
         };
-        let settings = match preset.settings(color) {
+        let settings = match preset.settings_with(color, self.session.pressure_curve()) {
             Ok(s) => s,
             Err(e) => {
                 self.status = format!("Brush: {e}");

@@ -26,6 +26,18 @@ struct App {
 
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        // The app's bundled Go font (BSD-3-Clause); egui's default fonts aren't enabled.
+        let mut fonts = egui::FontDefinitions::empty();
+        fonts.font_data.insert(
+            "go".into(),
+            Arc::new(egui::FontData::from_static(include_bytes!(
+                "../../brushye-app/assets/fonts/Go-Regular.ttf"
+            ))),
+        );
+        for f in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+            fonts.families.insert(f, vec!["go".into()]);
+        }
+        cc.egui_ctx.set_fonts(fonts);
         let tablet = Tablet::new(cc, cc).map_err(|e| e.to_string());
         match &tablet {
             Ok(t) => {
