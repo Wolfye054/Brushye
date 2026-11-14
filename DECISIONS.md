@@ -446,6 +446,7 @@ crates/
 | `objc2`, `objc2-app-kit` | macOS tablet backend (D-015) | Maintained, type-safe AppKit bindings |
 | `rmcp` | MCP server (M9) | Official Rust MCP SDK. 3.10 (MSRV 1.88), features `server` + `transport-io` only, no macros: tools are built from the command registry at runtime |
 | `tokio` (features `rt`, `macros`, `io-std`) | `brushye-mcp` only: the async runtime `rmcp` requires (added 2026-11-14, M9) | `rmcp` is built on tokio, so there is no alternative with it. Already in the lock file through the app's dependencies. The server runs on a current-thread runtime and does document work on its blocking pool |
+| `interprocess` | attach mode (D-022): Unix sockets and Windows named pipes, in `brushye-mcp` (and the app through its library) | Added 2026-11-14. Licence 0BSD OR Apache-2.0. Its dependencies are `recvmsg` and `doctest-file` (0BSD) and `widestring` (MIT OR Apache-2.0); **0BSD was added to the `deny.toml` allow list** (a public-domain-equivalent permissive licence, compatible with MIT OR Apache-2.0). Pure Rust; Unix uses `libc`, which is already in the tree |
 | `rusqlite` (feature `bundled`) | reading `.sut` (and later `.clip`) files, which are SQLite databases (M8, `specs/formats/sut.md`) | Approved by the maintainer 2026-11-13. Compiles the official SQLite C library (public domain) into Brushye, so no system library is needed. The second C dependency after zstd. Files are opened read-only and immutable with SQLite's defensive settings, and only SELECT is run. 0.42 needs Rust 1.89, so the workspace MSRV moved from 1.88 to 1.89 |
 | `insta` (dev) | golden tests for codecs and migrations | Snapshot review workflow |
 | `proptest` (dev) | property tests; print → parse round-trip fuzzing of the command codec (D-011) | Standard property-testing crate |
@@ -599,8 +600,8 @@ crates/
 - **Why:** exact CSP behaviour is a top priority, and alpha journals are few. Saved documents
   keep their pixels either way.
 
-## D-022 MCP clients can drive the running app (attach mode) — PROPOSAL
-- **Date:** proposed 2026-11-14 (M9). The maintainer asked for this proposal before any code.
+## D-022 MCP clients can drive the running app (attach mode) — ACCEPTED (2026-11-14)
+- **Date:** proposed and accepted by the maintainer 2026-11-14 (M9).
 - **Problem:** `brushye-mcp` holds its own headless session. An AI client can't paint in, or
   look at, the document open in the app window.
 - **Proposal:**

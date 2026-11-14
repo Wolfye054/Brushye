@@ -7,6 +7,8 @@
 //! it to `rmcp` over stdio.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+pub mod attach;
+
 use std::path::Path;
 
 use base64::Engine as _;
@@ -304,56 +306,68 @@ impl Server {
             session: Session::new(),
         }
     }
+}
 
-    pub fn session(&self) -> &Session {
-        &self.session
+fn doc(session: &Session) -> Result<std::sync::Arc<Document>, String> {
+    session
+        .document()
+        .ok_or_else(|| "no document (run doc.new first)".into())
+}
+
+/// The `brush.stroke` the app would record for this input: the current brush tool's
+/// selected sub tool, in the active colour; the eraser tool and the transparent colour
+/// erase (as `begin_stroke` in `brushye-app`).
+fn current_brush_stroke(
+    session: &Session,
+    layer: LayerId,
+    samples: Samples,
+) -> Result<Command, String> {
+    let tools = session.tools();
+    if !tools.tool.is_brush() {
+        return Err(format!(
+            "the current tool ({}) doesn't paint; tool.select pen, pencil, brush, airbrush or eraser",
+            tools.tool.name()
+        ));
     }
-
-    fn doc(&self) -> Result<std::sync::Arc<Document>, String> {
-        self.session
-            .document()
-            .ok_or_else(|| "no document (run doc.new first)".into())
-    }
-
-    /// The `brush.stroke` the app would record for this input: the current brush tool's
-    /// selected sub tool, in the active colour; the eraser tool and the transparent colour
-    /// erase (as `begin_stroke` in `brushye-app`).
-    fn current_brush_stroke(&self, layer: LayerId, samples: Samples) -> Result<Command, String> {
-        let tools = self.session.tools();
-        if !tools.tool.is_brush() {
-            return Err(format!(
-                "the current tool ({}) doesn't paint; tool.select pen, pencil, brush, airbrush or eraser",
-                tools.tool.name()
-            ));
+    let mut preset = tools
+        .current(tools.tool)
+        .ok_or("the current tool has no sub tool selected")?
+        .preset
+        .clone();
+    let color = match (tools.tool, tools.color()) {
+        (Tool::Eraser, _) => [0, 0, 0],
+        (_, Some(c)) => c,
+        (_, None) => {
+            preset.ink = Some(InkMode::Erase);
+            [0, 0, 0]
         }
-        let mut preset = tools
-            .current(tools.tool)
-            .ok_or("the current tool has no sub tool selected")?
-            .preset
-            .clone();
-        let color = match (tools.tool, tools.color()) {
-            (Tool::Eraser, _) => [0, 0, 0],
-            (_, Some(c)) => c,
-            (_, None) => {
-                preset.ink = Some(InkMode::Erase);
-                [0, 0, 0]
-            }
-        };
-        Ok(Command::BrushStroke(
-            preset.to_stroke(layer, color, samples),
-        ))
-    }
+    };
+    Ok(Command::BrushStroke(
+        preset.to_stroke(layer, color, samples),
+    ))
+}
 
-    fn image(&self, layer: Option<&str>) -> Result<Image, String> {
-        let doc = self.doc()?;
-        match layer {
-            Some(l) => layer_image(&doc, parse_layer(l)?),
-            None => Ok(render::flatten(&doc)),
-        }
+fn image(session: &Session, layer: Option<&str>) -> Result<Image, String> {
+    let doc = doc(session)?;
+    match layer {
+        Some(l) => layer_image(&doc, parse_layer(l)?),
+        None => Ok(render::flatten(&doc)),
     }
+}
+
+/// Where the tools run: a headless [`Server`] session, or the app's open document (attach
+/// mode, D-022). Tools reach the session only through these methods.
+pub trait Host {
+    fn session(&self) -> &Session;
+    fn session_mut(&mut self) -> &mut Session;
+    /// Replace the session (`doc_open`, `replay`); tool state carries over. The app asks the
+    /// user first when the replaced document has unsaved changes (see [`replaces_document`]).
+    fn replace(&mut self, s: Session, path: Option<&Path>);
+    /// `doc_save` wrote the document to `path`.
+    fn saved(&mut self, _path: &Path) {}
 
     /// Call a tool. `Err` is a tool error, reported to the client as `isError`.
-    pub fn call(&mut self, name: &str, args: &Map<String, Json>) -> Result<Vec<Out>, String> {
+    fn call(&mut self, name: &str, args: &Map<String, Json>) -> Result<Vec<Out>, String> {
         match name {
             "help" => {
                 check_keys(args, &[])?;
@@ -367,7 +381,7 @@ impl Server {
                 let script = req_str(args, "script")?;
                 let mut results = Vec::new();
                 for (i, line) in script.lines().enumerate() {
-                    match self.session.run_line(line) {
+                    match self.session_mut().run_line(line) {
                         Ok(Some(j)) => results.push(j),
                         Ok(None) => {}
                         Err(e) => {
@@ -396,7 +410,7 @@ impl Server {
                 }
                 let cmd = Command::from_json(&j)?;
                 let line = brushye_command::syntax::print_line(&cmd.to_raw());
-                self.session.execute(cmd).map_err(|e| e.0)?;
+                self.session_mut().execute(cmd).map_err(|e| e.0)?;
                 Ok(vec![Out::Text(format!("ok: {line}"))])
             }
             "query" => {
@@ -410,14 +424,14 @@ impl Server {
                 if q.contains('\n') {
                     return Err("one query per call (use `run` for several)".into());
                 }
-                match self.session.run_line(&q).map_err(|e| e.0)? {
+                match self.session_mut().run_line(&q).map_err(|e| e.0)? {
                     Some(j) => Ok(vec![Out::Text(pretty(&j))]),
                     None => Err("not a query".into()),
                 }
             }
             "render" => {
                 check_keys(args, &["layer", "x", "y", "w", "h", "max_size"])?;
-                let mut img = self.image(str_arg(args, "layer")?)?;
+                let mut img = image(self.session(), str_arg(args, "layer")?)?;
                 let region = [
                     u32_arg(args, "x")?,
                     u32_arg(args, "y")?,
@@ -452,14 +466,14 @@ impl Server {
                 let layer = match str_arg(args, "layer")? {
                     Some(l) => parse_layer(l)?,
                     None => self
-                        .session
+                        .session()
                         .active_layer()
                         .ok_or("no active layer (layer.select one, or pass 'layer')")?,
                 };
-                let cmd = self.current_brush_stroke(layer, samples)?;
+                let cmd = current_brush_stroke(self.session(), layer, samples)?;
                 let line = brushye_command::syntax::print_line(&cmd.to_raw());
                 let n = cmd_samples(&cmd);
-                self.session.execute(cmd).map_err(|e| e.0)?;
+                self.session_mut().execute(cmd).map_err(|e| e.0)?;
                 Ok(vec![Out::Text(format!(
                     "ok: {n} samples; {}",
                     line.split(" samples=").next().unwrap_or(&line)
@@ -467,7 +481,7 @@ impl Server {
             }
             "journal" => {
                 check_keys(args, &[])?;
-                Ok(vec![Out::Text(self.session.journal_text())])
+                Ok(vec![Out::Text(self.session().journal_text())])
             }
             "doc_open" => {
                 check_keys(args, &["path"])?;
@@ -489,9 +503,10 @@ impl Server {
                 for w in &l.warnings {
                     msg.push_str(&format!("\nwarning: {w}"));
                 }
-                let tools = self.session.tools().clone();
-                self.session = Session::from_document(l.doc, l.active);
-                self.session.set_tools(tools);
+                self.replace(
+                    Session::from_document(l.doc, l.active),
+                    Some(Path::new(path)),
+                );
                 Ok(vec![Out::Text(msg)])
             }
             "doc_save" => {
@@ -502,20 +517,21 @@ impl Server {
                     Some(Json::Bool(b)) => *b,
                     Some(_) => return Err("'embed_journal' must be a boolean".into()),
                 };
-                let doc = self.doc()?;
-                let journal = self.session.journal_text();
+                let doc = doc(self.session())?;
+                let journal = self.session().journal_text();
                 let opts = SaveOptions {
-                    active: self.session.active_layer(),
+                    active: self.session().active_layer(),
                     journal: embed.then_some(journal.as_str()),
                 };
                 brsh::save_file(Path::new(path), &doc, &opts, &mut TileCache::default())
                     .map_err(|e| format!("{path}: {e}"))?;
+                self.saved(Path::new(path));
                 Ok(vec![Out::Text(format!("saved {path}"))])
             }
             "export_png" => {
                 check_keys(args, &["path", "layer"])?;
                 let path = req_str(args, "path")?;
-                let img = self.image(str_arg(args, "layer")?)?;
+                let img = image(self.session(), str_arg(args, "layer")?)?;
                 let bytes = png_io::png_bytes(&img).map_err(|e| e.to_string())?;
                 std::fs::write(path, bytes).map_err(|e| format!("{path}: {e}"))?;
                 Ok(vec![Out::Text(format!(
@@ -540,16 +556,32 @@ impl Server {
                     None => Session::replay(&text),
                 };
                 let s = replayed.map_err(|e| format!("journal line {}: {}", e.line, e.msg))?;
-                let tools = self.session.tools().clone();
-                self.session = s;
-                self.session.set_tools(tools);
+                self.replace(s, None);
                 Ok(vec![Out::Text(format!(
                     "replayed {} commands",
-                    self.session.journal_len()
+                    self.session().journal_len()
                 ))])
             }
             other => Err(format!("unknown tool '{other}'")),
         }
+    }
+}
+
+/// Whether a tool replaces the session's document (the app confirms unsaved changes first).
+pub fn replaces_document(tool: &str) -> bool {
+    matches!(tool, "doc_open" | "replay")
+}
+
+impl Host for Server {
+    fn session(&self) -> &Session {
+        &self.session
+    }
+    fn session_mut(&mut self) -> &mut Session {
+        &mut self.session
+    }
+    fn replace(&mut self, mut s: Session, _path: Option<&Path>) {
+        s.set_tools(self.session.tools().clone());
+        self.session = s;
     }
 }
 

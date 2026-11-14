@@ -10,6 +10,13 @@ publish = false
 [[bin]]
 name = "brushye-mcp"
 path = "src/main.rs"
+required-features = ["server"]
+
+[features]
+default = ["server"]
+# The MCP server binary. The app uses the library without it (D-022), so it doesn't link
+# rmcp or tokio.
+server = ["dep:rmcp", "dep:tokio"]
 
 [lints]
 workspace = true
@@ -21,6 +28,8 @@ base64 = "0.22"
 serde_json = "1"
 # Official Rust MCP SDK (D-016). Tools are built from the command registry at runtime, so the
 # `macros` feature is not needed.
-rmcp = { version = "3.10", default-features = false, features = ["server", "transport-io"] }
+rmcp = { version = "3.10", default-features = false, features = ["server", "transport-io"], optional = true }
 # rmcp's runtime; the server runs on one thread and does document work on the blocking pool.
-tokio = { version = "1", features = ["rt", "macros", "io-std"] }
+tokio = { version = "1", features = ["rt", "macros", "io-std"], optional = true }
+# Local sockets / named pipes for attach mode (D-022).
+interprocess = "2.4"

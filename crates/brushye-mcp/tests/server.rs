@@ -1,6 +1,6 @@
 //! The MCP server core, called directly (no protocol).
 
-use brushye_mcp::{Out, Server, tools};
+use brushye_mcp::{Host as _, Out, Server, tools};
 use serde_json::{Map, Value as Json, json};
 
 fn args(j: Json) -> Map<String, Json> {
