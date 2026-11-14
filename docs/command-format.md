@@ -94,9 +94,10 @@ tokens are errors. Nothing is ignored silently.
 
 ## 7. Stroke samples (`samples=` of `brush.stroke`)
 
-A stroke records the raw input stream before any stabilization (D-011). Pressure is recorded
-after the global pen pressure adjustment (spec B-006), so a stroke replays the same whatever
-that setting is later. Two forms:
+A stroke records the raw input stream before any stabilization (D-011), with the pen's **raw**
+pressure. The global pen pressure adjustment is the journaled application setting
+`input.pressure_curve`, applied by the brush engine before each setting's own curve, as CSP
+does (spec B-006, D-015 5). Replay sees the same setting from the journal. Two forms:
 
 **Blob (canonical, written by Brushye):** `b64:` of
 ```

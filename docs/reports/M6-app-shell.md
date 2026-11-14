@@ -79,26 +79,20 @@ Run it with `cargo app` (release build), or `cargo app path/to/file.brsh`.
   and the pressure curve editor come with the brush editor (M7).
 - **Zoomed-out display:** at < 100 % without mipmaps, fine detail can shimmer.
 
-## A decision to settle: where the global pen pressure curve applies
-D-015 (accepted) item 5 says the global pressure curve is *a journaled setting applied in the
-brush engine*. In M4 I instead made `brush.stroke` samples carry pressure **after** the global
-curve (noted in B-006 and the M4 report), which contradicts D-015. Nothing depends on it yet,
-because there is no global curve setting in the app so far (identity). Options:
-- **(a) Follow D-015 as written:** add a journaled `input.pressure_curve` app-state command;
-  strokes record raw pressure and the engine applies the curve. Replay needs the setting in the
-  journal.
-- **(b) Keep the M4 behaviour:** the app applies the curve at capture; strokes record
-  calibrated pressure, so each stroke replays on its own. Update D-015 to say so.
+## Maintainer decisions (2026-11-13) and follow-up
+- **Pen pressure behaves like CSP 1.13.2:**
+  - strokes record raw pressure;
+  - the global curve is the journaled app setting `input.pressure_curve`, applied before
+    each setting's curve (D-015 5, B-006);
+  - the app saves it per user and edits it in File > Pen pressure settings (curve editor).
 
-I lean to (b): a stroke stays self-contained and calibration stays a property of the input
-device. Either way it needs your call before the pressure-adjustment UI (M7) is built.
-
-## A license note to confirm
-egui's bundled UI fonts (Ubuntu font, Hack, Noto Emoji, Emoji Icon Font) are under OFL-1.1 and
-the Ubuntu Font Licence. They now ship in the app, so cargo-deny flagged them. I allowed those
-two licenses for that one crate only, with a note in D-016. Both are standard font licenses that
-allow bundling with MIT/Apache software. If you'd rather pick the UI font yourself, that's a
-small change.
+  The drawing wizard isn't built yet: its fitting rule is unobserved.
+- **Fonts:** egui's bundled fonts (OFL/Ubuntu Font Licence) are replaced by the Go fonts
+  (BSD-3-Clause), and icons come from Phosphor (MIT). Both licenses are on the existing allow
+  list, so no license exception is needed.
+- **Layout and visuals must match CSP 1.13.2 (HUGE priority, recorded in CLAUDE.md):** an
+  observation run is recording CSP's default workspace (specs `specs/behavior/ui/`). The UI
+  described above is being rebuilt to match it, with Phosphor icons instead of CSP's.
 
 ## Proposed next step
 After the pen test and that decision: M7, the brush editor and alpha polish (curve editor,

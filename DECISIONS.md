@@ -425,7 +425,7 @@ crates/
 
 | Crate | Use | Why |
 |---|---|---|
-| `eframe`/`egui`, `wgpu` | UI, canvas display | Mandated by CLAUDE.md. **Fonts (M6, to confirm):** egui's `default_fonts` bundles the Ubuntu font, Hack, Noto Emoji and Emoji Icon Font under **OFL-1.1 and the Ubuntu Font Licence 1.0**. cargo-deny allows those two licenses for `epaint_default_fonts` only (`deny.toml` exception). Fonts are data, and both licenses permit bundling with MIT/Apache software; the alternative is choosing and bundling our own UI font, which would also be OFL in practice |
+| `eframe`/`egui`, `wgpu` | UI, canvas display | Mandated by CLAUDE.md. egui's `default_fonts` feature is **off** (its fonts are OFL/Ubuntu Font Licence). The app bundles the Go fonts (BSD-3-Clause) for text and Phosphor Icons (MIT) for icons, `crates/brushye-app/assets/fonts/` (maintainer decision 2026-11-13) |
 | `serde`, `serde_json` | document.json, query results, JSON command form | De facto standard; derives avoid hand-written codecs |
 | `schemars` | schemas generated from typed command params (D-011) | Keeps the MCP schema and UI forms in sync with the param structs |
 | `png` | PNG import/export, `preview.png` | Pure Rust, exact control over chunks (strip/write ICC deterministically) |

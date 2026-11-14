@@ -51,8 +51,8 @@ All tolerances are pinned in the tests, so a change in either direction shows up
 - `brush.stroke` carries every brush setting inline (defaults omitted), so a stroke replays
   without any tool state. When brush presets exist (M5/M7) a stroke can reference a preset plus
   overrides in a version 2 of the command, via the normal migration path.
-- Samples hold pressure **after** the global pen pressure curve (B-006), like device
-  calibration. The global curve is applied at input capture (M6).
+- Samples hold pressure **after** the global pen pressure curve. *(Reversed in M6: samples are
+  raw and the global curve is a journaled setting, as in CSP and D-015 5.)*
 
 ## Not done / open
 - From M4's scope: stabilization (B-007), ink combine modes Compare density / Erase (B-008),

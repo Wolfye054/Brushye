@@ -3,8 +3,15 @@
 ## What we're building
 Brushye is a free, open-source painting, illustration and comics app for
 Windows, macOS and Linux. It follows the workflow and panel organization of
-Clip Studio Paint (CSP) 1.13.2, so CSP users feel at home. Its visual design,
-icons, text and branding are all original.
+Clip Studio Paint (CSP) 1.13.2, so CSP users feel at home. Icons (Phosphor),
+text and branding are original.
+
+**HUGE PRIORITY (maintainer, 2026-11-13): the layout and visuals must match
+CSP 1.13.2** — every menu, palette, dock position, panel arrangement, control
+order, size and look, as observed in specs `specs/behavior/ui/`. The only
+deliberate difference is the icons: Brushye uses Phosphor icons (MIT), never
+CSP's, to avoid copyright problems. Never copy CSP's icon images or UI
+artwork; reproduce layout and look from observation.
 
 Priorities, in order:
 1. A complete command layer: everything scriptable and replayable.
@@ -31,7 +38,8 @@ Not allowed:
 - Test fixtures for CSP formats other than files the maintainer created in
   CSP, containing their own work
 
-Match behavior and workflow, not appearance. Don't speculate about how CSP
+Match behavior, workflow, layout and visuals (see the priority above; icons
+excepted). Don't speculate about how CSP
 works internally. If behavior is unclear, write a behavior spec and
 implement from it.
 

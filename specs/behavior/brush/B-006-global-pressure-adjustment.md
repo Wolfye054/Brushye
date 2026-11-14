@@ -59,7 +59,18 @@ pressure, with Stronger/Lighter as fixed output nudges of the interior points.
   read the points from a larger graph.
 - Does the global curve also apply to tilt, or only pressure? (B-010.)
 
-## Implementation note (2026-11-13, M4)
-`brush.stroke` samples carry pressure **after** the global adjustment: the curve is part of
-input capture (like device calibration), so a stroke command replays identically whatever the
-global setting is later. The global curve itself arrives with the app shell (M6).
+## Implementation (2026-11-13, M6; supersedes the M4 note)
+As CSP does and D-015 5 states: strokes record **raw** pressure; the global curve is the
+application setting `input.pressure_curve` (journaled, not undoable, kept across `doc.new`,
+saved per user by the app), applied in the engine before every setting's curve, sub(global(P)).
+The app's File > Pen pressure settings edits the curve directly.
+
+Test `b006_global_curve_applies_before_the_setting_curve` replays both B-006 exports with the
+wizard curve read from the graph: stroke widths within 2 rows for P ≤ 0.45, and the other order
+fits clearly worse. Above P = 0.5 CSP's strokes are already full size, but a quadratic B-spline
+through the graph readings ((0.41, 0.76), (0.50, 1.00), (1, 1)) is not.
+
+Open: the wizard (fitting a curve to strokes the user draws) and its Stronger/Lighter rule are
+not implemented, because the fitting rule is unknown (open questions above). Also open: the
+curve type of wizard curves (the B-spline that the editor's curves use, B-004, doesn't reach 1.0
+at the wizard's 0.5 point).

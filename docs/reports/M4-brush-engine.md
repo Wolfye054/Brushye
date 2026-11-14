@@ -62,7 +62,9 @@ Every tolerance is pinned, so changes in either direction show up.
 - `brush.stroke` stays at version 1 although its output changed (B-spline path, new commit
   rule). Brushye is pre-alpha with no journals in use. From the alpha on, a change in rendering
   gets a new command version.
-- Pressure in samples is recorded after the global pressure curve (B-006), as in part 1.
+- ~~Pressure in samples is recorded after the global pressure curve~~. Changed in M6 at the
+  maintainer's direction (behave like CSP): samples are raw, and the global curve is the
+  journaled `input.pressure_curve` setting applied in the engine (D-015 5, B-006).
 
 ## Proposed next step
 M5: undo/redo hardening and the native `.brsh` format (D-014), with brush settings saved as
