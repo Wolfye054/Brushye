@@ -84,8 +84,9 @@ See docs/reports/M7-brush-editor.md.**
 ## M8 — .sut import (first post-alpha milestone)
 **Status (2026-11-14): import done; one engine gap open.** 98 samples studied
 (`specs/formats/sut.md`). The importer is in the CLI and app. Cross-check B-012: every setting
-imports exactly. Hard-tip brushes draw like CSP, and soft-tip spacing does too since B-013. Open:
-anti-aliased thin tips (B-014, needs a sub-pixel sweep) and per-pixel soft-tip profiles (B-009).
+imports exactly. Hard-tip and soft-tip brushes draw like CSP (B-013 spacing; B-015 offsets and level-4 edge).
+Open: the anti-aliased thin-tip rule (B-014: sub-pixel sweep observed, row-based rule to find)
+and soft tips at size 8.
 - Format study from maintainer-made samples (`specs/formats/study-plan.md`).
 - Map .sut settings to Brushye brush settings; report anything that can't be mapped.
 - Import only at runtime from user-supplied files; nothing bundled.

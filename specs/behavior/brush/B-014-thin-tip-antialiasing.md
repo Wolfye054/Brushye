@@ -32,6 +32,26 @@
    stroke), so the model is missing something structural. The engine keeps the old interim
    model until the rule is found.
 
+## Run 2 (2026-11-14): sub-pixel sweep
+- **Setup:** new custom sub tool "B014b": size 41, thickness 30, Vertical, hardness 5,
+  density 100. `brush_run2.py thinsweep`: 10×10 dabs, press (70.5 + 70i + i/10,
+  70.5 + 70j + j/10), on an 800×800 canvas (origin (543, 163)).
+- **Exports:** `data/B014_sweep_a{0,30}_aa{1,2,3}.png` and the AA None control
+  `B014_sweep_a30_aa0.png`. All 100 dabs are present in every file.
+- **Ink per dab is stable:** standard deviation 0.7–2.2 px² over the 100 sub-pixel positions.
+- **Centroid minus press point,** by the press point's fractional position:
+  - AA None: x −0.50 (± 0.05), as in B-010; y 0 ± 0.07.
+  - AA on, angle 0: x ≈ 0 (−0.07 … +0.01). y is **negative and grows with AA**: about −0.15
+    (Weak), −0.18 (Middle), −0.22 (Strong). It follows a **sawtooth over the fractional y**:
+    it decreases from frac 0.0 to 0.3, then jumps up at 0.4–0.5 (Middle: −0.18, −0.20, −0.21,
+    −0.23, then −0.17, −0.15 …).
+  - AA Middle, angle 30: x −0.13, y −0.11 … −0.15, with the jump at frac 0.5.
+- **Reading:** a jump at frac 0.5 is a pixel-row snap. CSP seems to rasterise anti-aliased
+  thin tips row by row, with rounding, not as a smooth distance ramp. That fits the earlier
+  asymmetric row-200 edges, and explains why no smooth model is exact. The round tip's AA None
+  scanline rule (B-001) is the closest known analogue.
+
 ## Open
-- A dense sub-pixel sweep of thin dabs at each AA level, as B-001 did for the round tip, to
+- Find the row-based rule from the sweep data, then replace the interim model.
+- (Earlier note) a dense sub-pixel sweep of thin dabs at each AA level, as B-001 did for the round tip, to
   find the exact rule.
