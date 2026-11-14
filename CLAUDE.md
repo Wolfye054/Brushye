@@ -120,7 +120,8 @@ command layer. Nothing changes state outside it.
 - `crates/`: Rust workspace. Layout per DECISIONS D-010 (accepted): brushye-core, brushye-command,
   brushye-format, brushye-app, brushye-cli, plus brushye-tablet (M1). Only brushye-app and
   brushye-tablet may use UI/GPU/OS-input crates. Crates are created as their milestone starts
-  (now: brushye-core, brushye-command, brushye-format, brushye-cli, brushye-tablet, brushye-app;
+  (now: brushye-core, brushye-command, brushye-format, brushye-cli, brushye-tablet, brushye-app,
+  brushye-sut;
   run the app with `cargo app`).
 - `docs/command-format.md`: the exact command text grammar (D-011).
 - `docs/native-format.md`: the exact `.brsh` / `.brshbrush` layout (D-014).
@@ -138,7 +139,9 @@ report). M5 (undo/redo fuzzing, the .brsh format and .brshbrush user
 brushes) is done. M6 (app shell, GPU canvas display, live strokes, CSP 1.13.2 layout and look) is done;
 the maintainer's pen test passed. M7 (brush editor + alpha polish) is done, including D-018
 (tool state as commands) and D-019 (native file dialogs); the maintainer tested it and
-v0.1.0-alpha is tagged. Now: M8 (.sut import), samples made by automated observation (D-020). New architectural decisions still
+v0.1.0-alpha is tagged. M8 (.sut import, crate brushye-sut) is done; open engine item: anti-aliased
+thin tips (B-014). D-021: before 1.0, brush fidelity fixes may change journal replay. Next: M9
+(MCP server). New architectural decisions still
 need maintainer approval first (see Working agreement). Never copy code from the maintainer's
 other projects (photocraft, clipcraft); design ideas only.
 
