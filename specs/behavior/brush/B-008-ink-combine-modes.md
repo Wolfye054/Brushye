@@ -1,5 +1,5 @@
 # B-008 Ink blending (combine) modes of the brush itself
-- Status: **observed** (exact models for 28 of 35 modes at opacity 100 and 50; the rest within ±1–3 or the L-007 tolerances)
+- Status: **implemented (all 35 modes; open cases pinned)**
 - CSP version: 1.13.2 (PRO, 64-bit, build 202301210208)
 - Date / method / observer: 2026-11-13 / automated-Wine + virtual stylus / Claude
 
@@ -88,3 +88,12 @@ round(v) = ⌊v + 0.5⌋.
   density change k?
 - Brush modes inside one stroke: do overlapping dabs of one stroke combine before the mode
   is applied (B-003 buffer), as assumed? Only single dabs were used here.
+
+## Implementation, M4 part 2 (2026-11-13)
+`brush::ink` implements every mode with the models above (`b008_ink_modes`, all 65,536 px):
+- opacity 100: 28 modes exact; Background 53 px ±1; Darker/Lighter color 2 px (luma ties);
+  Hue, Saturation, Color, Brightness within ±1–3 (L-007);
+- opacity 50: keep-alpha and brush-only modes exact; paint modes ±1 on 152–377 px; Multiply ±2;
+  Background ±1; colour modes ±1–2.
+Inside one stroke the dabs build the B-003 buffer first and the mode is applied once, at the
+commit (assumed, open above).

@@ -1,5 +1,5 @@
 # B-001 Round tip: single-dab profile vs size and anti-aliasing
-- Status: **implemented (AA Weak/Middle/Strong exact; AA None: scanline rule found in run 2, not yet implemented)**
+- Status: **implemented (AA None scanline rule; ties open)**
 - CSP version: 1.13.2 (PRO, 64-bit, build 202301210208)
 - Date / method / observer: 2026-11-13 / automated-Wine + virtual stylus (`vpen.py`, Xorg :78
   libinput → Wine wintab) / Claude. Flag `verify-native` only for the AA None tie rule.
@@ -93,3 +93,9 @@ Status of the open question: **answered** (rule above), apart from the tie handl
 - Weak and Middle: every pixel exact; Strong: 7 px off by 1 (as in the spec).
 - AA None, closed disc: 24 px wrong, all on the open edge-tie rule. One of them is 0.21 px
   outside the edge (size 1 at a pixel corner lights one pixel).
+
+## Implementation, M4 part 2 (2026-11-13)
+`tip::coverage` implements the scanline rule (rows −R ≤ dy < R, |dx| ≤ √(R² − dy²) + 0.1).
+Run-1 grid: 4 of 1858 px wrong (was 24 with the closed disc). Run-2 sweeps
+(`b001_run2_scanline_edge_rule`): 9–20 px wrong per 100 dabs, all exact ties; AA Weak sweep
+59 px off by 1.

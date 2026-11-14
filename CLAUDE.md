@@ -119,9 +119,9 @@ command format, determinism, undo/redo, .brsh format, tablet input, dependencies
 strategy) are ACCEPTED. M1 (tablet spike) is done on Linux; Windows/macOS backends are deferred
 (no test hardware). Pre-M3 blending observations are done (L-003..L-007). M2 (document model +
 command layer) is done, verified on all three CI platforms. M3 (CPU compositor, exact against
-the observed blend data) is done. M4 (brush engine) part 1 is done: round tip, spacing, build-up
-and pressure dynamics, exact against the observed brush data away from open rules; the rest of
-M4 waits on specs B-007/B-008/B-010/B-011. New architectural decisions still
+the observed blend data) is done. M4 (brush engine) is done: path, spacing, tips,
+ink modes and pressure dynamics, built against two observation runs (open items in the M4
+report). Next: M5 (undo hardening + .brsh). New architectural decisions still
 need maintainer approval first (see Working agreement). Never copy code from the maintainer's
 other projects (photocraft, clipcraft); design ideas only.
 

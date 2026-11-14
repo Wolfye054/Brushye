@@ -1,5 +1,8 @@
 # M4 report, part 1: round-tip brush engine (2026-11-13)
 
+> Superseded by `M4-brush-engine.md`. Part 2 replaced the polyline path, the AA None disc and
+> the 8-bit commit formula described below.
+
 M4 is not finished. This part covers the engine core that the observed specs pin down.
 Stabilization, ink combine modes, tip thickness/angle, tilt and colour mixing still need their
 specs observed first (B-007, B-008, B-010, B-011 are drafts).

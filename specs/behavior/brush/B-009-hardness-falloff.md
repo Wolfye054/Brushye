@@ -1,5 +1,5 @@
 # B-009 Circle tip hardness falloff
-- Status: **implemented (interim: observed size-101 profile scaled by size)**
+- Status: **implemented (interim profile table, scaled by R; offset +0.5 px)**
 - CSP version: 1.13.2 (PRO, 64-bit, build 202301210208)
 - Date / method / observer: 2026-11-13 / automated-Wine + virtual stylus / Claude
 
@@ -99,3 +99,7 @@ on the pixel corner (301, 201), not on (300.5, 200.5) where the pen went down (t
 pixel i equals the −x profile at pixel i − 1); the hard tip (h5) is centred on the press point.
 Brushye offsets soft dabs by (+0.5, +0.5). Open: is this a fixed offset or rounding of the centre
 to the pixel grid? Sweep sub-pixel press positions with a soft tip.
+
+## Implementation, M4 part 2 (2026-11-13)
+Run-2 sizes (`b009_run2_soft_tip_sizes`): h1 within 1 level at sizes 11 and 41, h2 within 4/2,
+h3 within 15/2, h4 single edge pixels; h5 (hard) 1 px (a tie).

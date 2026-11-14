@@ -1,5 +1,5 @@
 # B-010 Tilt and direction dynamics (thickness, angle)
-- Status: **observed** (partial: tip thickness/direction/angle exact; tilt reaches CSP under Wine; "Direction of line" observed; pen-tilt angle not run)
+- Status: **implemented (thickness, direction, angle, direction of line; tilt not implemented)**
 - CSP version: 1.13.2 (PRO, 64-bit, build 202301210208)
 - Needs: automated-Wine with virtual stylus *probably* OK. Tilt axes reach X (D-003), but CSP's use of them is unverified. Otherwise maintainer + real pen
 
@@ -58,3 +58,10 @@ vpen tilt units are degrees (−64 … 63).
 - Exact tilt input mapping on native Windows; how tilt_x and tilt_y combine.
 - Thickness with AA levels other than None, and with soft tips.
 
+## Implementation, M4 part 2 (2026-11-13)
+`tip::Shape`: closed ellipse with semi-axes R and R·T, centre 0.5 px left, long axis rotated
+clockwise by the angle; "direction of line" uses the path tangent (B-002 spline). Tests: the
+four tip exports are 4, 0, 0, 0 px wrong; direction of line matches within 4 px in 5 of 8
+strokes, and the 3 strokes with the late first dab are pinned (open). AA levels and soft tips on
+thin tips use the round model in the ellipse's frame (unobserved). Tilt dynamics are not
+implemented until the input mapping is checked on native Windows.

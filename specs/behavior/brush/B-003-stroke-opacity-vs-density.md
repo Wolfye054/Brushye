@@ -1,5 +1,5 @@
 # B-003 Stroke accumulation: Opacity cap vs Brush density
-- Status: **implemented**
+- Status: **implemented (commit rule of run 2)**
 - CSP version: 1.13.2 (PRO, 64-bit, build 202301210208)
 - Date / method / observer: 2026-11-13 / automated-Wine + virtual stylus / Claude
 
@@ -98,3 +98,8 @@ four exports; P pinned (see B-002 implementation note on polylines).
 Not observed, chosen for now: stroke colour where the layer already has a different colour
 (alpha-weighted, like Normal), and per-dab varying opacity (each pixel keeps the highest dab
 opacity, so a constant opacity behaves exactly as observed).
+
+## Implementation, M4 part 2 (2026-11-13)
+`brush::ink` commits with the run-2 rule (A' = A + round((255 − A)·a), empty pixels truncated);
+this replaces part 1's 8-bit formula. `b003_run2_layer_commit_is_exact`: the 25-stroke stack is
+exact away from dab edges, as are all run-1 exports including the polyline P.

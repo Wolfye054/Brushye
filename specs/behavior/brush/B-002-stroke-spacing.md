@@ -1,5 +1,5 @@
 # B-002 Stroke gap (spacing): Narrow / Normal / Wide / Fixed
-- Status: **implemented (straight strokes; curves open)**
+- Status: **implemented (B-spline path, density by gap)**
 - CSP version: 1.13.2 (PRO, 64-bit, build 202301210208)
 - Date / method / observer: 2026-11-13 / automated-Wine + virtual stylus / Claude
 
@@ -144,3 +144,19 @@ Finding while implementing (B-003 data): on the 5-point polyline P, CSP leaves p
 at the corners and at the end that a dab placed exactly on the input polyline would cover. CSP
 seems to smooth or shorten the path between sparse input points. Brushye follows the straight
 polyline for now; this needs a spec of its own (sparse events, sharp corners, sub-pixel ends).
+
+## Implementation, M4 part 2 (2026-11-13)
+`brush::path` implements the B-spline path; `density_by_gap` the d′ = D·3s/size rule (capped at
+full density above a 33 % gap, unobserved). Tests:
+- run-1 rows and sweeps, run-2 rows (base, velocity off, 4 × density by gap): every pixel exact
+  away from dab edges;
+- arcs and polylines: 1–15 edge px wrong per export;
+- run-1 polyline P (B-003): exact away from dab edges once its events are taken as 2 px apart
+  (corners only does not fit), so it was a dense polyline and the B-spline explains its
+  corners;
+- pressure ramp: 19 of 19 dabs within 0.9 px.
+
+Correction to the run-2 ramp setup: `brush_run2.py ramp` sends the pressure ramp as raw vpen
+values, so CSP received P = (p − 0.0099)/0.9901 (B-004 input definition), i.e. 0.192 → 1.0, not
+0.2 → 1.0. With that, the "gap follows the dab's own size" rule matches; the ~0.4 px per-gap
+shortfall in `ramp_check` was this offset.

@@ -1,5 +1,5 @@
 # B-007 Correction > Stabilization and "adjust by speed"
-- Status: **observed** (partial: per-event moving mean fits stabilization ≤ 20; larger values open)
+- Status: **implemented (moving mean; S ≥ 50 open)**
 - CSP version: 1.13.2 (PRO, 64-bit, build 202301210208)
 - Needs: automated-Wine OK (scripted XTEST motion with controlled timing). Flag `verify-native`,
   since timing under Wine/Xvfb may differ.
@@ -54,3 +54,10 @@ Analysis: `tools/observe/b007_analyze.py data` (centre line = alpha-weighted y p
   either option time-dependent.
 - Post correction (Correction page) was not tested.
 
+## Implementation, M4 part 2 (2026-11-13)
+`path::stabilize`: each event becomes the mean of the last **S** events (positions only), and
+the last event is repeated S − 1 times at release so the path catches up; the result then goes
+through the B-spline (B-002). With the spline in the chain, N = S fits better than the N ≈ S + 1
+fitted above without it: centre-line rms 0.03 / 0.06 / 0.16 px at S = 0 / 6 / 20 (N = S + 1:
+0.15 and 0.31). S = 50 and 100 use the same rule and are off (rms 2.2 and 6.4 px), pinned as open.
+"Adjust by speed" and post correction are not implemented.
