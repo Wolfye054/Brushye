@@ -671,3 +671,147 @@ crates/
   - **Verified:** automated tests (`crates/brushye-mcp/tests/attach.rs`). Also checked in the
     app under Xvfb: AI painting on the user's canvas; the open-over-unsaved confirmation, both
     Cancel and Discard; Turn off.
+
+## D-023 Layer structure: folders, Through, clipping, layer masks (M10 part 1) — PROPOSAL
+- **Date:** proposed 2026-11-14, after the M9 report. It changes the document model, the
+  command set and the `.brsh` format, so it needs approval before code (working agreement).
+- **Goal:** CSP 1.13.2's layer structure. That is layer folders (Normal and Through), Clip to
+  Layer Below, layer masks, and the Layer palette controls for them, as laid out in U-006.
+  `.clip` import (M11) and most of M10 (selections, fill, transform) work on this structure.
+- **What is already known (observed, automated-Wine, bit-exact):**
+  - **L-004:**
+    - A **Normal folder** composites its children in isolation, onto transparent, and then
+      blends the result like one layer.
+    - A **Through folder** blends its children straight into the backdrop.
+    - **Folder opacity** lerps the folder's result with the backdrop, using the L-003
+      opacity model, for Through too.
+  - **L-006:**
+    - A clipped layer is composited onto its clip base, and the result keeps the clip base's
+      alpha. A Multiply clipped layer multiplies against the base's colour, not against the
+      stack below.
+    - Lock transparent pixels keeps every pixel's alpha.
+  - **Manual (paraphrased, `docs/research`):**
+    - Clipping to a Through folder treats the folder as Normal.
+    - New layers inside a clipping group are clipped.
+    - Masks are alpha-scale: transparent or eraser hides, any opaque colour reveals. They have
+      Enable, Link and "Show mask area" toggles.
+
+### Proposal
+1. **Document model: a flat list with parent links** (`brushye-core`).
+   - Each `Layer` gains `parent: Option<LayerId>`.
+   - `LayerKind` gains `Folder`. A folder has no tiles.
+   - `Document::layers` stays one bottom-to-top `Vec<Arc<Layer>>`. A folder's subtree is the
+     contiguous run directly below the folder's own entry, which matches the order in CSP's
+     palette.
+   - `Document` enforces this invariant: every insert, move and delete keeps subtrees
+     contiguous, and a layer's parent must be a folder. Copy-on-write snapshots (D-013), ids
+     and the existing code that walks the list keep working.
+   - The renderer and the palette build the tree from the list when they need it.
+2. **New layer properties** (all undoable, as layer properties are in H-001):
+   - **`clip: bool`**: Clip to Layer Below. The clip base is the nearest non-clipped sibling
+     below.
+   - **`BlendMode::Through`**: valid only on folders (an error elsewhere). It appears first in
+     the blend list for folders, as in CSP. New folders are Normal (L-004).
+   - **`mask: Option<Mask>`** on raster layers and folders. A `Mask` holds an 8-bit
+     alpha-scale tile grid (64 KiB per 256² tile, empty tiles dropped as for pixels) and
+     `enabled: bool`.
+     - Undoability of `enabled`, Link and "Show mask area": recorded as `appstate` until
+       observed (spec H-002 below).
+   - **`expanded: bool`**: a folder's open/closed state in the palette. `appstate`, like
+     visibility, and saved in the file.
+3. **Commands** (`brushye-command`; the MCP server and CLI get them automatically).
+   - **Changes to existing commands** only add optional keys, so these commands stay
+     **v1**. Old journals replay unchanged, and printing an old command is unchanged.
+   - Existing commands, extended:
+     - `layer.new L5 kind=folder`, plus a new optional key `into=F` that inserts at the top
+       of folder F.
+     - `above=X` inserts into X's parent.
+     - `layer.move L2 into=F` / `above=X`. Moving a folder moves its subtree. Moving a folder
+       into itself or its descendants is an error.
+     - `layer.set L2 clip=true`, `layer.set F blend=through`.
+     - `layer.delete F` deletes the folder and its contents, as CSP does.
+   - New commands:
+     - `layer.group F L2`: Create Folder and Insert Layer (Ctrl+G), for one layer for now.
+       Multi-select comes with M10's selection work.
+     - `layer.ungroup F`: moves the children out and deletes the folder. Only if CSP has an
+       equivalent; to be confirmed in U-014, otherwise dropped.
+     - `mask.new L2 fill=reveal|hide`: Create layer mask, revealing everything or hiding
+       everything. Masks from a selection wait for selections.
+     - `mask.delete L2`, `mask.apply L2` (Apply Mask to Layer).
+     - `mask.set L2 enabled=… [linked=…]`.
+     - `layer.expand F open=…` (appstate).
+   - **Painting on a mask:** `brush.stroke` gains an optional key `target=mask` (default
+     `layer`). Which target is active is app state: `layer.select L2 target=mask`. How ink
+     maps to mask values comes from L-008.
+   - **Queries:** `?layer.list` and `?layer.get` add `parent`, `clip`, `mask` and
+     `expanded`. `?layer.mask_pixel L2 x= y=`.
+4. **Renderer** (`brushye-core/render.rs`, the CPU reference, D-012). Compositing is
+   recursive over the tree, tile by tile:
+   - **Normal folders:** isolated onto a transparent buffer, then composited, followed by the
+     L-003 opacity lerp (L-004).
+   - **Through folders:** children go straight into the backdrop, followed by the opacity lerp
+     against the backdrop from before the folder (L-004).
+   - **Clipping groups:** the clipped layers composite onto the base in isolation; the result
+     keeps the base alpha (L-006). A Through folder used as a clip base renders as Normal.
+   - **Masks:** they scale the layer's or folder's alpha. The exact rounding and order come
+     from L-008.
+   - Exact tests cover every observed case. Open cases (several children in Through, nested
+     folders, a semi-transparent clipped layer, other base modes) get stated tolerances until
+     observed, per D-017's rule.
+5. **`.brsh` format v2** (`docs/native-format.md`, D-014).
+   - `document.json` layers gain `parent`, `clip` and `expanded`, plus
+     `mask: {enabled, linked}` or `null`. `kind` gains `"folder"`.
+   - Mask tiles are stored at `layers/L<n>/mask/<tx>_<ty>.zst` (256² 8-bit alpha, zstd).
+   - `FORMAT_VERSION` goes to 2. A migration loads v1 files with the defaults (no parents,
+     no clipping, no masks), with golden tests. Brushye 0.1 already refuses newer files
+     cleanly.
+   - **Hash compatibility:** `content_hash` adds the new fields only when they aren't the
+     default. Every existing journal, golden hash and saved document keeps its hash.
+6. **App** (match CSP, U-006; layout and look from observation):
+   - **Layer palette:** a tree with indentation, a folder disclosure arrow and a folder icon
+     (Phosphor). There is a clipping indicator, and a mask thumbnail beside the layer
+     thumbnail.
+   - The existing Layer-palette buttons start working: New Layer Folder, Clip to Layer Below,
+     Create layer mask, Apply Mask to Layer and Enable Mask. Folders get the Through entry
+     in the blend list.
+   - Layer menu: Create folder and insert layer (Ctrl+G), and the Layer mask items.
+   - Drag and drop into folders in the palette.
+   - Selecting a mask thumbnail makes strokes go to the mask.
+7. **Observation first (automated-Wine, in the maintainer's CSP, new documents only):**
+   - **L-008 Layer masks:**
+     - Are masks continuous or thresholded?
+     - The exact value math and rounding.
+     - How each ink colour and the eraser map to mask values.
+     - Masks on folders (Normal and Through), mask plus clipping, and Enable off.
+   - **L-004 / L-006 open questions:**
+     - Several children in a Through folder, child opacity, nested folders.
+     - A semi-transparent clipped layer, base in other modes, clipping onto a Normal folder,
+       Through used as a clip base.
+   - **U-014:** the palette look of folders, masks and clipping (indent, icons, the clipping
+     bar, mask thumbnail, "Show mask area" colour). Also whether CSP has a release-folder
+     command.
+   - **H-002:** which of these are History steps: mask enable, folder open/close, mask
+     create/apply, and clip on/off. Clip is expected to be a step, as layer settings are.
+8. **Order of work** (each step is usable on its own):
+   1. **Folders, Through and clipping:** the model, commands, renderer, format v2 and palette.
+      The data is mostly observed already.
+   2. **Masks**, once L-008 is observed.
+- **Alternatives:**
+  - **A real tree** (folders own their children). It is natural for rendering, but every
+    id lookup, move and copy-on-write update becomes recursive, and existing code that walks
+    the list changes. The flat list gives the same structure with less churn, and it is how
+    CSP's palette and PSD store layers.
+  - **Masks as separate layers** (`kind=mask` under the layer). That would make "one layer"
+    commands (delete, move, apply) multi-object operations and drift from CSP's model, where
+    a mask belongs to its layer.
+  - **Bump command versions (`layer.new/2`, …)** instead of adding optional keys. It is
+    unnecessary: an absent key keeps the old meaning, which D-011 allows. Versions are kept
+    for changes of meaning.
+  - **Masks before folders:** they need observation first, and folders and clipping don't.
+- **Cost:**
+  - Folders, Through and clipping: about 4–5 days (model invariants and tests, renderer, format
+    v2 and migration, palette tree with drag and drop).
+  - Masks: about 2–3 days after L-008.
+  - Observation runs (L-008, U-014, H-002, the open L-004/L-006 cases): about 1 day of
+    automated runs.
+- **No new dependencies.**
