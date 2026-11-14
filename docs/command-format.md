@@ -7,7 +7,10 @@ implement this document; any change here is a format change (bump the journal fo
 
 - UTF-8, one command per line. The printer writes `\n`; the parser also accepts `\r\n`.
 - A **journal** (`.bcmd` written by Brushye) starts with a header line:
-  `#brushye-journal v<format> app=<app-version>`; format version is `1`.
+  `#brushye-journal v<format> app=<app-version> [base=<hash>]`; format version is `1`.
+  `base=` (16 hex digits) appears when the session started from an opened document instead of
+  `doc.new`: it is that document's content hash (`?doc.hash`), and replay refuses any other
+  base document (`brushye replay JOURNAL --base FILE.brsh`).
 - A **script** (hand-written `.bcmd`) may omit the header and the `@<seq>` prefixes.
 - Lines that are empty or contain only spaces/tabs are ignored.
 - A line whose first non-space character is `#` is a comment (the header is the first line only).

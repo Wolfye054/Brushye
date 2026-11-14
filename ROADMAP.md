@@ -54,7 +54,7 @@ Ordering follows CLAUDE.md's priorities: command layer → brush engine → .sut
   plus pressure specs once the maintainer has recorded them.
 - **Exit:** brush specs at status *observed* have passing tests; open differences are listed.
 
-## M5 — Undo/redo + native format
+## M5 — Undo/redo + native format — DONE (docs/reports/M5-native-format.md)
 - Tile copy-on-write undo, history as commands.
 - `.brsh` save/load (D-014): ZIP + JSON + zstd tiles + flattened preview, crash-safe save,
   round-trip and migration tests; `brushye-cli dump`.

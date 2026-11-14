@@ -111,6 +111,7 @@ command layer. Nothing changes state outside it.
   brushye-tablet may use UI/GPU/OS-input crates. Crates are created as their milestone starts
   (now: brushye-core, brushye-command, brushye-format, brushye-cli, brushye-tablet).
 - `docs/command-format.md`: the exact command text grammar (D-011).
+- `docs/native-format.md`: the exact `.brsh` / `.brshbrush` layout (D-014).
 - `docs/reports/`: milestone reports.
 
 ## Current status
@@ -121,7 +122,8 @@ strategy) are ACCEPTED. M1 (tablet spike) is done on Linux; Windows/macOS backen
 command layer) is done, verified on all three CI platforms. M3 (CPU compositor, exact against
 the observed blend data) is done. M4 (brush engine) is done: path, spacing, tips,
 ink modes and pressure dynamics, built against two observation runs (open items in the M4
-report). Next: M5 (undo hardening + .brsh). New architectural decisions still
+report). M5 (undo/redo fuzzing, the .brsh format and .brshbrush user
+brushes) is done. Next: M6 (app shell + GPU canvas display). New architectural decisions still
 need maintainer approval first (see Working agreement). Never copy code from the maintainer's
 other projects (photocraft, clipcraft); design ideas only.
 
