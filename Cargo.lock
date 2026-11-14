@@ -192,7 +192,7 @@ dependencies = [
 
 [[package]]
 name = "brushye-app"
-version = "0.0.0"
+version = "0.1.0-alpha"
 dependencies = [
  "brushye-command",
  "brushye-format",
@@ -204,7 +204,7 @@ dependencies = [
 
 [[package]]
 name = "brushye-cli"
-version = "0.0.0"
+version = "0.1.0-alpha"
 dependencies = [
  "brushye-command",
  "brushye-format",
@@ -213,7 +213,7 @@ dependencies = [
 
 [[package]]
 name = "brushye-command"
-version = "0.0.0"
+version = "0.1.0-alpha"
 dependencies = [
  "base64",
  "brushye-core",
@@ -223,7 +223,7 @@ dependencies = [
 
 [[package]]
 name = "brushye-core"
-version = "0.0.0"
+version = "0.1.0-alpha"
 dependencies = [
  "libm",
  "png",
@@ -232,7 +232,7 @@ dependencies = [
 
 [[package]]
 name = "brushye-format"
-version = "0.0.0"
+version = "0.1.0-alpha"
 dependencies = [
  "brushye-command",
  "brushye-core",
@@ -245,7 +245,7 @@ dependencies = [
 
 [[package]]
 name = "brushye-tablet"
-version = "0.0.0"
+version = "0.1.0-alpha"
 dependencies = [
  "eframe",
  "raw-window-handle",
