@@ -158,10 +158,8 @@ pub fn view(text: &str) -> JournalView {
                 }
             }
             Some(Class::History) if raw.name == "history.undo" => pos = pos.saturating_sub(1),
-            Some(Class::History) if raw.name == "history.redo" => {
-                if pos + 1 < steps.len() {
-                    pos += 1;
-                }
+            Some(Class::History) if raw.name == "history.redo" && pos + 1 < steps.len() => {
+                pos += 1;
             }
             _ => {}
         }
