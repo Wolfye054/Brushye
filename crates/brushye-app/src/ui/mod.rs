@@ -448,7 +448,6 @@ pub fn frame(app: &mut App, ui: &mut egui::Ui) {
     chrome::status_strip(app, ui, status);
     chrome::timeline_dock(ui, c, timeline);
 
-    dialogs::native(app);
     left::dynamics_popup(&ctx, &mut app.ui);
     if let Some(s) = left::sub_tool_dialogs(&ctx, &mut app.ui) {
         app.status = s;

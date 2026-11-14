@@ -124,6 +124,8 @@ pub struct App {
     restored: Option<String>,
     /// Tool state generation last written to the settings file.
     tools_saved: u64,
+    /// The native file dialog that is open, if any (D-019).
+    pub(crate) file_dialog: Option<crate::ui::dialogs::PendingFile>,
 }
 
 /// Seconds between autosave snapshots while there are unsaved changes.
@@ -220,6 +222,7 @@ impl App {
             autosave_cache: TileCache::default(),
             restored: None,
             tools_saved: 0,
+            file_dialog: None,
         };
         // The user's saved sub tools become the session's tool state (D-018).
         app.session.set_tools(app.ui.tools.clone());
@@ -1353,8 +1356,10 @@ impl eframe::App for App {
         self.pen_events.extend(evs);
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         self.sync_tools();
+        // Before the frame, so a request made last frame never shows its in-app window.
+        crate::ui::dialogs::native(self, frame, ui.ctx());
         crate::ui::frame(self, ui);
         let ctx = ui.ctx().clone();
         self.autosave_tick(&ctx);

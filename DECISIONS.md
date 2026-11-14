@@ -554,6 +554,9 @@ crates/
   - Write per-OS dialog code ourselves. That is a lot of unsafe FFI for no gain.
 - **Implemented (2026-11-13):** `rfd` 0.17 with default features (XDG portal and Wayland).
   It adds only `rfd` and `pollster` (MIT/Apache-2.0) to the lock file. 0.18 needs Rust 1.92,
-  above our MSRV (1.88). The dialogs run on the UI thread, which macOS requires. Setting
+  above our MSRV (1.88). Each dialog is created on the UI thread (macOS requires that),
+  attached to the window, and awaited on a separate thread. This keeps the UI loop running, so
+  GNOME doesn't report "not responding" while a dialog is open (reported by the maintainer
+  2026-11-13). Setting
   `BRUSHYE_INAPP_DIALOGS=1` keeps the in-app path field (used for test displays without a
   portal).
