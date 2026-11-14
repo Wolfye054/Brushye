@@ -195,6 +195,37 @@ fn l006_hidden_and_missing_clip_base() {
     );
 }
 
+/// L-004 run 3: a Normal folder's opacity on a partly transparent result (layer-style, not a
+/// lerp); a folder at 50 % as clip base; a clipped folder (Normal, and Through, which CSP shows
+/// in red and renders as Normal).
+#[test]
+fn l004_folder_opacity_and_clipped_folders() {
+    let i = inputs();
+    let mut d = doc_with_base(&i);
+    ok(d.add_layer(raster(2, &i.top_alpha), None));
+    ok(d.group(folder(4), LayerId(2)));
+    set(&mut d, 4, |l| l.opacity = 50);
+    exact(&d, "observed3/folder_partial_op50.png");
+    ok(d.add_layer(raster(3, &i.top), None));
+    set(&mut d, 3, |l| l.clip = true);
+    exact(&d, "observed3/clip_folder_base_op50.png");
+    for (blend, name) in [
+        (BlendMode::Normal, "normal"),
+        (BlendMode::Through, "through"),
+    ] {
+        let d = clip_doc(&i, |d| {
+            set(d, 3, |l| l.clip = false);
+            ok(d.group(folder(5), LayerId(3)));
+            set(d, 5, |l| {
+                l.clip = true;
+                l.blend = blend;
+            });
+        });
+        ok(d.check_structure());
+        exact(&d, &format!("observed3/clipped_folder_{name}.png"));
+    }
+}
+
 /// Clip base in Multiply: CSP's output equals its own plain Multiply layer with the base's
 /// alpha (L-006 run 2), so the remaining error is L-002's open Multiply-with-partial-alpha
 /// rule: the same tolerance as there (max 2), and only on partially transparent pixels.

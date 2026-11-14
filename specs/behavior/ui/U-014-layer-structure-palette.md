@@ -98,7 +98,32 @@
   **Show gradients: Yes** as the default for a new mask. Gradient masks (continuous values) are
   therefore on by default in 1.13.2. The other values are in L-008.
 
+### Run 2 (2026-11-14): New Layer Folder, Change Selected Layer, delete
+Same method. Document: base, top_alpha Copy and top Copy.
+- **New Layer Folder** (Layer menu) puts an empty, expanded folder **directly above the
+  selected layer**, in its folder, and selects it.
+  - With a **folder** selected, expanded or not, empty or not, the new folder still goes
+    **above** that folder, never inside.
+  - **New Raster Layer** behaves differently: with an expanded folder selected, even an empty
+    one, it goes inside.
+  - Names seen: "Folder 1", then "Folder 2". History label: "New Layer Folder".
+- **Change Selected Layer** (Layer > Change Selected Layer ▸ Layer Above (Alt+]) / Layer Below
+  (Alt+[)) moves the selection one **visible palette row**.
+  - It goes into an expanded folder's contents.
+  - A collapsed folder's contents are skipped: Folder 1 → Layer Below → the row under the
+    folder.
+- **Delete Layer on a folder** removes the folder and everything in it, as one "Delete Layer"
+  History step.
+  - The selection moves to the layer directly below. The same happens after deleting a
+    raster layer: run 1 deleted Layer 1 and top_alpha Copy below it became selected.
+- **Clipped folder:** the clip bar is drawn at the left of the folder row, before the arrow.
+  Through on a clipped folder is shown in **red** (L-004 run 3).
+
 ## Open questions
+- How CSP numbers new layer and folder names ("Folder 1", "Folder 2": a per-kind counter, the
+  highest number + 1, or something else). Brushye names them by layer id for now.
+- Which layer is selected after deleting the bottom layer, or a layer whose lower neighbour
+  is inside a collapsed folder.
 - Ungroup of a folder whose mask hides something: is the mask applied first, or discarded?
 - Drag and drop into, out of and between folders: the drop indicator and the target rules.
 - Layer Property > Mask expression > Show gradients: its other values (L-008).

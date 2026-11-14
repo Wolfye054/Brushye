@@ -1,5 +1,5 @@
 # L-004 Layer folders: Normal vs Through (pass-through), folder opacity
-- Status: **observed** (run 2, 2026-11-14: several children, child opacity, folder masks)
+- Status: **observed** (run 2, 2026-11-14: several children, child opacity, folder masks; run 3: folder opacity on partial alpha, clipped folders)
 - CSP version: 1.13.2 (PRO, 64-bit, build 202301210208)
 - Needs: automated-Wine OK
 - Date / method / observer: 2026-11-13 / automated-Wine (Xvfb :77) / Claude (background run)
@@ -53,6 +53,28 @@ All results are **bit-exact**, 131 072 px:
   - Applying the mask to each child instead is wrong (39 728 px off).
   - Like folder opacity (run 1), a Through folder's mask blends the backdrop toward the
     folder's result.
+
+## Run 3 (2026-11-14): folder opacity on a partly transparent result, clipped folders
+Method: automated-Wine (Xvfb :77). Data: `data/observed3/{folder_partial_op50,
+clip_folder_base_op50,clipped_folder_normal,clipped_folder_through}.png`. All bit-exact.
+
+- `folder_partial_op50`: base, then Folder [top_alpha Copy] at **50 %** (Normal folder).
+  - The folder's composited result (here top_alpha's colour and alpha) blends like a
+    layer: its alpha a becomes `(a·(o8+1))>>8` (L-003), then the usual L-002 lerp.
+  - **A lerp of the result with the backdrop is wrong** (40 716 px off). Run 1 couldn't tell
+    the two apart because its folder result was opaque.
+  - Only **Through** folders blend their opacity as a lerp with the backdrop (run 1).
+- `clip_folder_base_op50`: the same folder at 50 % as the clip base of `top Copy`. The clip
+  group keeps the folder result's alpha and blends with the folder's opacity, layer-style
+  (exact; the lerp is off on 40 716 px).
+- `clipped_folder_normal`: a folder that is itself clipped (Folder [top Copy], clip on, above
+  top_alpha Copy) clips like a layer, using its composited result. It is identical to L-006's
+  `clip_normal`.
+- `clipped_folder_through`: the clipped folder set to **Through**.
+  - CSP shows "Through" **in red**, in the blend dropdown and in the row's "100 % Through"
+    text.
+  - It renders exactly as the Normal case: a clipped folder can't pass through, and stays
+    clipped.
 
 ## Open questions
 - Nested folders (rendering). The palette nests (U-014); compositing is expected to follow

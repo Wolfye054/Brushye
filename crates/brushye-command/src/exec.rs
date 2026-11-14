@@ -288,6 +288,17 @@ impl Session {
 
     fn apply_undoable(&mut self, cmd: &Command, merge: bool) -> Result<(), ExecError> {
         // After Ungroup, CSP's edit target is the folder's topmost child (U-014).
+        // After a delete, CSP selects the layer directly below the deleted one (U-014 run 2).
+        let below_deleted = match cmd {
+            Command::LayerDelete(p) => {
+                let d = self.doc()?;
+                d.subtree(p.layer)
+                    .ok()
+                    .and_then(|r| r.start.checked_sub(1))
+                    .map(|i| d.layers()[i].id)
+            }
+            _ => None,
+        };
         let ungrouped_top = match cmd {
             Command::LayerUngroup(p) => self
                 .doc()?
@@ -324,6 +335,9 @@ impl Session {
             // Ctrl+G selects the new folder (U-014).
             Command::LayerGroup(p) => self.active = Some(p.folder),
             Command::LayerUngroup(_) => self.active = ungrouped_top.or(self.active),
+            Command::LayerDelete(p) if self.active == Some(p.layer) || self.active.is_none() => {
+                self.active = below_deleted;
+            }
             _ => {}
         }
         self.fix_active();

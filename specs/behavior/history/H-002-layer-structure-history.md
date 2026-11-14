@@ -26,6 +26,8 @@ Each action below adds **one** History entry, with the label shown, unless marke
 | Link Mask to Layer off, then on | **Switch link for mask** (one entry each time) |
 | Apply Mask to Layer | Apply layer mask |
 | Ungroup Layer Folder | Ungroup Layer Folder |
+| New Layer Folder (menu) | New Layer Folder |
+| Delete Layer (a folder with contents) | Delete Layer |
 
 - Unlike layer visibility (H-001: not a History step), **Show Mask Area, Enable Mask and Link
   are History steps**.
@@ -40,5 +42,4 @@ Each action below adds **one** History entry, with the label shown, unless marke
 
 ## Open questions
 - Consecutive clip or Show Mask Area toggles: expected to merge like mask enable (not run).
-- New Layer Folder (the menu item), Delete Mask, and layer moves into or out of folders by drag:
-  their labels.
+- Delete Mask, and layer moves into or out of folders by drag: their labels.

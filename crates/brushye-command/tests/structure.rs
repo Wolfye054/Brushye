@@ -168,3 +168,16 @@ fn json_form_of_new_commands() {
         assert_eq!(brushye_command::syntax::print_line(&cmd.to_raw()), line);
     }
 }
+
+#[test]
+fn delete_selects_the_layer_below() {
+    let mut s = Session::new();
+    run(
+        &mut s,
+        "doc.new 8 8\nlayer.new L1\nlayer.new L2\nlayer.group L10 layer=L2\nlayer.new L3\nlayer.select L10",
+    );
+    run(&mut s, "layer.delete L10");
+    assert_eq!(q(&mut s, "?doc.info")["active"], "L1");
+    run(&mut s, "layer.select L3\nlayer.delete L3");
+    assert_eq!(q(&mut s, "?doc.info")["active"], "L1");
+}

@@ -146,8 +146,8 @@ fn children<'a>(doc: &'a Document, folder: &Layer) -> Vec<&'a Layer> {
         .collect()
 }
 
-/// `px = lerp15(before, px, a15(o8))` on every canvas pixel of the rectangle: folder opacity,
-/// for Normal and Through folders alike (L-004).
+/// `px = lerp15(before, px, a15(o8))` on every canvas pixel of the rectangle: a Through
+/// folder's opacity (L-004).
 fn opacity_lerp(before: &[u8], px: &mut [u8], r: &Rect, opacity: u8) {
     let w = a15(effective_alpha(255, opacity));
     for y in r.y0..r.y1 {
@@ -177,13 +177,11 @@ fn draw(doc: &Document, layer: &Layer, r: &Rect, px: &mut [u8], first: bool) -> 
         return !still_first;
     }
     if layer.is_folder() {
+        // A Normal folder's composited result blends like one layer: its opacity scales the
+        // result's alpha exactly as layer opacity does (L-004 run 3, partly transparent
+        // result; only Through folders lerp).
         let src = content(doc, layer, r);
-        let before = (layer.opacity < 100 && !first).then(|| px.to_vec());
-        let op = if first { layer.opacity } else { 100 };
-        composite_buffer(&src, r, px, layer.blend, op, first);
-        if let Some(b) = before {
-            opacity_lerp(&b, px, r, layer.opacity);
-        }
+        composite_buffer(&src, r, px, layer.blend, layer.opacity, first);
         return true;
     }
     each_pixel(layer, r, |d, s| {
@@ -240,16 +238,8 @@ fn render_list(doc: &Document, list: &[&Layer], r: &Rect, px: &mut [u8], mut fir
             for (k, a) in alpha.into_iter().enumerate() {
                 group[k * 4 + 3] = a;
             }
-            let before = (base.is_folder() && base.opacity < 100 && !first).then(|| px.to_vec());
-            let op = if base.is_folder() && !first {
-                100
-            } else {
-                base.opacity
-            };
-            composite_buffer(&group, r, px, base.blend, op, first);
-            if let Some(b) = before {
-                opacity_lerp(&b, px, r, base.opacity);
-            }
+            // The group blends like its base, including a folder base's opacity (L-004 run 3).
+            composite_buffer(&group, r, px, base.blend, base.opacity, first);
             first = false;
         }
         i = j;

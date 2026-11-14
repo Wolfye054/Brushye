@@ -531,9 +531,20 @@ fn layers(app: &mut App, ui: &mut Ui, c: &Colors, body: Rect) {
                 .is_some_and(|l| !l.locked && !clip_base_hidden(&doc, l.id));
             ui.add_enabled_ui(enabled, |ui| {
                 let blend = layer.as_ref().map_or(BlendMode::Normal, |l| l.blend);
+                // A clipped folder can't pass through: CSP shows Through in red and renders it
+                // as Normal (L-004 run 3).
+                let red_through = layer.as_ref().is_some_and(|l| l.is_folder() && l.clip);
+                let label = |m: BlendMode| {
+                    let t = egui::RichText::new(blend_label(m));
+                    if m == BlendMode::Through && red_through {
+                        t.color(THROUGH_RED)
+                    } else {
+                        t
+                    }
+                };
                 egui::ComboBox::from_id_salt("layer-blend")
                     .width(74.0)
-                    .selected_text(blend_label(blend))
+                    .selected_text(label(blend))
                     .show_ui(ui, |ui| {
                         // Folders get Through as the first entry (U-014).
                         let folder = layer.as_ref().is_some_and(|l| l.is_folder());
@@ -542,9 +553,7 @@ fn layers(app: &mut App, ui: &mut Ui, c: &Colors, body: Rect) {
                             .into_iter()
                             .chain(BlendMode::ALL.iter().copied());
                         for mode in modes {
-                            if ui
-                                .selectable_label(blend == mode, blend_label(mode))
-                                .clicked()
+                            if ui.selectable_label(blend == mode, label(mode)).clicked()
                                 && let Some(l) = &layer
                                 && l.blend != mode
                             {
@@ -903,6 +912,18 @@ fn palette_rows(doc: &Document) -> Vec<PaletteRow> {
     out
 }
 
+/// Clip bar: red when clipped onto a base, grey when there is no usable base (U-014).
+fn clip_bar_color(on: bool) -> Color32 {
+    if on {
+        Color32::from_rgb(226, 112, 112)
+    } else {
+        Color32::from_gray(150)
+    }
+}
+
+/// Through on a clipped folder (CSP draws it red: it renders as Normal there).
+const THROUGH_RED: Color32 = Color32::from_rgb(230, 30, 30);
+
 /// Folder rows are shorter than layer rows (they have no thumbnail, U-014).
 const FOLDER_ROW: f32 = 31.0;
 /// Indent per folder level (U-014).
@@ -972,7 +993,12 @@ fn layer_row(
     }
     let (tx, line1, line2) = if l.is_folder() {
         // Disclosure arrow (opens/closes, not a History step) and the folder icon.
-        let arrow = Rect::from_min_size(pos2(x0, rr.top()), vec2(14.0, h - 1.0));
+        // A clipped folder shows the clip bar left of its arrow (L-004 run 3).
+        if let Some(on) = row.clip {
+            let bar = Rect::from_min_size(pos2(x0, rr.top() + 1.0), vec2(CLIP_BAR, h - 3.0));
+            ui.painter().rect_filled(bar, 0.0, clip_bar_color(on));
+        }
+        let arrow = Rect::from_min_size(pos2(x0 + shift, rr.top()), vec2(14.0, h - 1.0));
         let open = l.expanded;
         widgets::draw_icon(
             ui,
@@ -1009,12 +1035,7 @@ fn layer_row(
     } else {
         if let Some(on) = row.clip {
             let bar = Rect::from_min_size(pos2(x0, rr.top() + 1.0), vec2(CLIP_BAR, 38.0));
-            let col = if on {
-                Color32::from_rgb(226, 112, 112)
-            } else {
-                Color32::from_gray(150)
-            };
-            ui.painter().rect_filled(bar, 0.0, col);
+            ui.painter().rect_filled(bar, 0.0, clip_bar_color(on));
         }
         let tex = layer_thumbnail(app, ui, doc, l);
         ui.painter().image(
@@ -1032,12 +1053,20 @@ fn layer_row(
         (thumb.right() + 6.0, rr.top() + 11.0, rr.top() + 29.0)
     };
     let small = egui::FontId::proportional(10.0);
-    ui.painter().text(
+    let head = ui.painter().text(
         pos2(tx, line1),
         egui::Align2::LEFT_CENTER,
-        format!("{} % {}", l.opacity, blend_label(l.blend)),
-        small,
+        format!("{} % ", l.opacity),
+        small.clone(),
         c.text,
+    );
+    let red = l.is_folder() && l.clip && l.blend == BlendMode::Through;
+    ui.painter().text(
+        pos2(head.right(), line1),
+        egui::Align2::LEFT_CENTER,
+        blend_label(l.blend),
+        small,
+        if red { THROUGH_RED } else { c.text },
     );
     let mut tag = String::new();
     if l.locked {

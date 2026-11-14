@@ -82,6 +82,25 @@ pub enum Dialog {
     Notice(String),
 }
 
+/// The Layer palette's rows, top to bottom: every layer whose folders are all open.
+pub(crate) fn visible_rows(doc: &brushye_command::core::Document) -> Vec<LayerId> {
+    fn walk(
+        doc: &brushye_command::core::Document,
+        parent: Option<LayerId>,
+        out: &mut Vec<LayerId>,
+    ) {
+        for l in doc.children(parent).into_iter().rev() {
+            out.push(l.id);
+            if l.is_folder() && l.expanded {
+                walk(doc, Some(l.id), out);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(doc, None, &mut out);
+    out
+}
+
 /// Where a layer moves to (Layer Order, drag and drop; U-015).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MoveTo {
@@ -530,22 +549,16 @@ impl App {
         self.can_edit_layer() && d.subtree(id).is_ok_and(|r| r.len() < d.layers().len())
     }
 
-    /// Layer > New Layer Folder: placed like a new raster layer (inside an expanded selected
-    /// folder, otherwise above the selection).
+    /// Layer > New Layer Folder: always directly above the selected layer, in its folder,
+    /// even when the selection is an expanded folder (unlike New Raster Layer; U-014 run 2).
     pub(crate) fn new_folder(&mut self) {
         let id = self.next_layer_id();
-        let active = self.session.active_layer();
-        let into = active.filter(|a| {
-            self.doc()
-                .and_then(|d| d.layer(*a).map(|l| l.is_folder() && l.expanded))
-                .unwrap_or(false)
-        });
         self.exec(Command::LayerNew(commands::LayerNew {
             layer: id,
             kind: Some(brushye_command::core::LayerKind::Folder),
             name: Some(format!("Folder {}", id.0)),
-            above: if into.is_some() { None } else { active },
-            into,
+            above: self.session.active_layer(),
+            into: None,
         }));
     }
 
@@ -709,12 +722,14 @@ impl App {
         let (Some(d), Some(id)) = (self.doc(), self.session.active_layer()) else {
             return;
         };
-        let ids: Vec<LayerId> = d.layers().iter().map(|l| l.id).collect();
-        let Some(i) = ids.iter().position(|&x| x == id) else {
+        // Layer > Change Selected Layer walks the palette's visible rows: a closed folder's
+        // contents are skipped (U-014 run 2). Rows are listed top to bottom.
+        let rows = visible_rows(&d);
+        let Some(i) = rows.iter().position(|&x| x == id) else {
             return;
         };
-        let j = if above { i + 1 } else { i.wrapping_sub(1) };
-        if let Some(&n) = ids.get(j) {
+        let j = if above { i.wrapping_sub(1) } else { i + 1 };
+        if let Some(&n) = rows.get(j) {
             self.exec(Command::LayerSelect(commands::LayerSelect { layer: n }));
         }
     }
