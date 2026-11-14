@@ -8,6 +8,7 @@ use serde_json::{Value as Json, json};
 use crate::params;
 use crate::params::{Arg, Blob, JsonReader, Mode, ParamSpec, Reader, Samples};
 use crate::syntax::{RawLine, Value};
+use crate::tools::{Chip, Tool};
 
 /// How a command interacts with history (D-013, spec H-001).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -18,6 +19,9 @@ pub enum Class {
     Undoable,
     /// Application/view state: journaled, never undoable.
     AppState,
+    /// Tools, sub tools and colour chips (D-018): never undoable and not journaled, since they
+    /// can't change the document (a stroke records its settings and colour).
+    Tool,
     /// `history.undo` / `history.redo`.
     History,
 }
@@ -222,6 +226,179 @@ params! {
     pub struct QInputPressureCurve {}
 }
 params! {
+    /// Select a tool in the tool column.
+    pub struct ToolSelect {
+        tool: Tool = pos "Tool",
+    }
+}
+params! {
+    /// Select a sub tool (and its tool and group). A locked sub tool that is left reverts to its
+    /// locked settings (U-010).
+    pub struct SubtoolSelect {
+        tool: Option<Tool> = opt "Tool (default: the current tool)",
+        group: Option<u32> = opt "Group tab, from 0 (default: the current group)",
+        item: Option<u32> = opt "Sub tool in the group, from 0 (default: the selected one)",
+    }
+}
+params! {
+    /// Change a sub tool's name or settings. Settings left out keep their value; `clear` turns
+    /// settings off (back to their default), e.g. `clear=size_pressure,hardness`.
+    pub struct SubtoolSet {
+        tool: Option<Tool> = opt "Tool (default: the current tool)",
+        group: Option<u32> = opt "Group tab, from 0 (default: the current group)",
+        item: Option<u32> = opt "Sub tool in the group, from 0 (default: the selected one)",
+        name: Option<String> = opt "New name",
+        size: Option<f64> = opt "Brush size (diameter) in px",
+        aa: Option<Aa> = opt "Anti-aliasing",
+        hardness: Option<u8> = opt "Tip hardness 1 (soft) ..= 5 (hard)",
+        opacity: Option<u8> = opt "Ink opacity in percent",
+        density: Option<u8> = opt "Brush density in percent",
+        ink: Option<InkMode> = opt "Ink blending mode",
+        gap: Option<Gap> = opt "Dab gap: narrow, normal, wide, or percent of size",
+        density_by_gap: Option<bool> = opt "Adjust brush density by gap",
+        thickness: Option<u8> = opt "Tip thickness in percent, 1..=100",
+        direction: Option<TipAxis> = opt "Axis that thickness shortens",
+        angle: Option<f64> = opt "Tip angle in degrees, clockwise",
+        angle_line: Option<bool> = opt "Tip angle follows the direction of the line",
+        stabilization: Option<u8> = opt "Stabilization 0..=100",
+        size_pressure: Option<u8> = opt "Pen pressure controls size; minimum in percent",
+        size_curve: Option<Curve> = opt "Size pressure curve points [x,y;…]",
+        opacity_pressure: Option<u8> = opt "Pen pressure controls opacity; minimum in percent",
+        opacity_curve: Option<Curve> = opt "Opacity pressure curve points [x,y;…]",
+        density_pressure: Option<u8> = opt "Pen pressure controls density; minimum in percent",
+        density_curve: Option<Curve> = opt "Density pressure curve points [x,y;…]",
+        clear: Option<String> = opt "Comma-separated settings to turn off (not size)",
+    }
+}
+params! {
+    /// Add a sub tool at the end of a group and select it.
+    pub struct SubtoolAdd {
+        tool: Option<Tool> = opt "Tool (default: the current tool)",
+        group: Option<u32> = opt "Group tab, from 0 (default: the current group)",
+        name: String = key "Name",
+        settings: Option<String> = opt "Settings as `key=value …` (default: the tool's first default sub tool)",
+    }
+}
+params! {
+    /// Copy a sub tool; the copy goes right after it and is selected.
+    pub struct SubtoolCopy {
+        tool: Option<Tool> = opt "Tool (default: the current tool)",
+        group: Option<u32> = opt "Group tab, from 0 (default: the current group)",
+        item: Option<u32> = opt "Sub tool in the group, from 0 (default: the selected one)",
+        name: Option<String> = opt "Name of the copy (default: \"<name> 2\")",
+    }
+}
+params! {
+    /// Delete a sub tool (a group keeps at least one).
+    pub struct SubtoolDelete {
+        tool: Option<Tool> = opt "Tool (default: the current tool)",
+        group: Option<u32> = opt "Group tab, from 0 (default: the current group)",
+        item: Option<u32> = opt "Sub tool in the group, from 0 (default: the selected one)",
+    }
+}
+params! {
+    /// Move a sub tool to another position in its group.
+    pub struct SubtoolMove {
+        tool: Option<Tool> = opt "Tool (default: the current tool)",
+        group: Option<u32> = opt "Group tab, from 0 (default: the current group)",
+        item: Option<u32> = opt "Sub tool in the group, from 0 (default: the selected one)",
+        to: u32 = key "New position, from 0",
+    }
+}
+params! {
+    /// Lock or unlock a sub tool: edits to a locked sub tool are undone when it is left.
+    pub struct SubtoolLock {
+        tool: Option<Tool> = opt "Tool (default: the current tool)",
+        group: Option<u32> = opt "Group tab, from 0 (default: the current group)",
+        item: Option<u32> = opt "Sub tool in the group, from 0 (default: the selected one)",
+        locked: bool = key "Locked",
+    }
+}
+params! {
+    /// Reset a sub tool to its registered default, else its built-in default.
+    pub struct SubtoolReset {
+        tool: Option<Tool> = opt "Tool (default: the current tool)",
+        group: Option<u32> = opt "Group tab, from 0 (default: the current group)",
+        item: Option<u32> = opt "Sub tool in the group, from 0 (default: the selected one)",
+    }
+}
+params! {
+    /// Register a sub tool's current settings as its default (what reset restores).
+    pub struct SubtoolSaveDefault {
+        tool: Option<Tool> = opt "Tool (default: the current tool)",
+        group: Option<u32> = opt "Group tab, from 0 (default: the current group)",
+        item: Option<u32> = opt "Sub tool in the group, from 0 (default: the selected one)",
+    }
+}
+params! {
+    /// Show or hide a setting's row in the Tool property palette.
+    pub struct SubtoolShowRow {
+        tool: Option<Tool> = opt "Tool (default: the current tool)",
+        group: Option<u32> = opt "Group tab, from 0 (default: the current group)",
+        item: Option<u32> = opt "Sub tool in the group, from 0 (default: the selected one)",
+        row: String = key "Row key (as in Sub Tool Detail, e.g. size, hardness, aa)",
+        shown: bool = key "Shown in Tool property",
+    }
+}
+params! {
+    /// Add back the built-in sub tools missing from a tool.
+    pub struct SubtoolAddDefaults {
+        tool: Option<Tool> = opt "Tool (default: the current tool)",
+    }
+}
+params! {
+    /// Rename a sub tool group.
+    pub struct SubtoolGroupSet {
+        group: u32 = pos "Group tab, from 0",
+        tool: Option<Tool> = opt "Tool (default: the current tool)",
+        name: String = key "Name",
+    }
+}
+params! {
+    /// Set the colour of the main or sub chip.
+    pub struct ColorSet {
+        chip: Chip = pos "main or sub",
+        color: Rgba8 = key "Colour #rrggbb",
+    }
+}
+params! {
+    /// Make a colour chip the drawing colour (transparent erases).
+    pub struct ColorActive {
+        chip: Chip = pos "main, sub or transparent",
+    }
+}
+params! {
+    /// Tools, the current tool and every tool's sub tool names.
+    pub struct QTools {}
+}
+params! {
+    /// One sub tool in full.
+    pub struct QSubtool {
+        tool: Option<Tool> = opt "Tool (default: the current tool)",
+        group: Option<u32> = opt "Group tab, from 0 (default: the current group)",
+        item: Option<u32> = opt "Sub tool in the group, from 0 (default: the selected one)",
+    }
+}
+params! {
+    /// The colour chips.
+    pub struct QColor {}
+}
+
+impl SubtoolSet {
+    /// The preset settings this command gives, in the preset's JSON form.
+    pub fn settings_json(&self) -> serde_json::Map<String, Json> {
+        let names: Vec<&str> = crate::brush_preset::BrushPreset::PARAMS
+            .iter()
+            .map(|p| p.name)
+            .collect();
+        self.write_json()
+            .into_iter()
+            .filter(|(k, _)| names.contains(&k.as_str()))
+            .collect()
+    }
+}
+
+params! {
     /// Undo one step.
     pub struct HistoryUndo {}
 }
@@ -388,6 +565,21 @@ registry! {
         LayerShow(LayerShow) = "layer.show" v 1 AppState "Show or hide a layer (not undoable, as in CSP)",
         LayerSelect(LayerSelect) = "layer.select" v 1 AppState "Make a layer the active layer",
         InputPressureCurve(InputPressureCurve) = "input.pressure_curve" v 1 AppState "Set the global pen pressure adjustment curve",
+        ToolSelect(ToolSelect) = "tool.select" v 1 Tool "Select a tool",
+        SubtoolSelect(SubtoolSelect) = "subtool.select" v 1 Tool "Select a sub tool",
+        SubtoolSet(SubtoolSet) = "subtool.set" v 1 Tool "Change a sub tool's name or settings",
+        SubtoolAdd(SubtoolAdd) = "subtool.add" v 1 Tool "Add a sub tool to a group",
+        SubtoolCopy(SubtoolCopy) = "subtool.copy" v 1 Tool "Copy a sub tool",
+        SubtoolDelete(SubtoolDelete) = "subtool.delete" v 1 Tool "Delete a sub tool",
+        SubtoolMove(SubtoolMove) = "subtool.move" v 1 Tool "Move a sub tool within its group",
+        SubtoolLock(SubtoolLock) = "subtool.lock" v 1 Tool "Lock or unlock a sub tool",
+        SubtoolReset(SubtoolReset) = "subtool.reset" v 1 Tool "Reset a sub tool to its default",
+        SubtoolSaveDefault(SubtoolSaveDefault) = "subtool.save_default" v 1 Tool "Register a sub tool's settings as its default",
+        SubtoolShowRow(SubtoolShowRow) = "subtool.show_row" v 1 Tool "Show or hide a Tool property row",
+        SubtoolAddDefaults(SubtoolAddDefaults) = "subtool.add_defaults" v 1 Tool "Add back missing built-in sub tools",
+        SubtoolGroupSet(SubtoolGroupSet) = "subtool.group_set" v 1 Tool "Rename a sub tool group",
+        ColorSet(ColorSet) = "color.set" v 1 Tool "Set the main or sub colour",
+        ColorActive(ColorActive) = "color.active" v 1 Tool "Choose the active colour chip",
         HistoryUndo(HistoryUndo) = "history.undo" v 1 History "Undo one step",
         HistoryRedo(HistoryRedo) = "history.redo" v 1 History "Redo one step",
     }
@@ -400,6 +592,9 @@ registry! {
         LayerPixel(QLayerPixel) = "layer.pixel" "A layer's own pixel at x, y (RGBA)",
         History(QHistory) = "history" "Undo history: step labels and current position",
         InputPressureCurve(QInputPressureCurve) = "input.pressure_curve" "The global pen pressure curve's control points",
+        Tools(QTools) = "tools" "The current tool and every tool's sub tools",
+        Subtool(QSubtool) = "subtool" "One sub tool's name, settings, rows and lock",
+        Color(QColor) = "color" "The main and sub colours and the active chip",
         Commands(QCommands) = "commands" "Command and query registry with parameter schemas",
     }
 }
@@ -426,7 +621,7 @@ pub fn registry_json() -> Json {
 /// The command reference as Markdown (`docs/commands.md`, `brushye commands --markdown`).
 pub fn reference_markdown() -> String {
     let mut out = String::from(
-        "# Brushye command reference\n\nGenerated from the command registry by `brushye commands --markdown`; a test keeps this\nfile current. Syntax: `docs/command-format.md`. Classes: **session** starts a new document\nand history, **undoable** is one undo step, **appstate** is journaled but not undoable,\n**history** is undo/redo.\n",
+        "# Brushye command reference\n\nGenerated from the command registry by `brushye commands --markdown`; a test keeps this\nfile current. Syntax: `docs/command-format.md`. Classes: **session** starts a new document\nand history, **undoable** is one undo step, **appstate** is journaled but not undoable,\n**history** is undo/redo, **tool** changes tools, sub tools and colours (not undoable, not\njournaled).\n",
     );
     let table = |out: &mut String, s: &Spec| {
         if s.params.is_empty() {

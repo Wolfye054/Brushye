@@ -10,6 +10,7 @@ pub mod commands;
 pub mod exec;
 pub mod params;
 pub mod syntax;
+pub mod tools;
 
 /// The document model, for reading the immutable versions a `Session` hands out.
 pub use brushye_core as core;

@@ -122,6 +122,8 @@ pub struct Session {
     /// Content hash of the document this session was opened from (`None`: started by
     /// `doc.new`). Recorded in the journal header so replay can check it gets the same base.
     base: Option<u64>,
+    /// Tools, sub tools and colour chips (D-018); kept across `doc.new`.
+    tools: crate::tools::ToolState,
 }
 
 impl Default for Session {
@@ -141,6 +143,7 @@ impl Session {
             merge_open: None,
             pressure_curve: Curve::linear(),
             base: None,
+            tools: crate::tools::ToolState::default(),
         }
     }
 
@@ -162,6 +165,18 @@ impl Session {
     /// The global pen pressure curve (`input.pressure_curve`).
     pub fn pressure_curve(&self) -> &Curve {
         &self.pressure_curve
+    }
+
+    /// Tools, sub tools and colour chips (`tool.*`, `subtool.*`, `color.*`).
+    pub fn tools(&self) -> &crate::tools::ToolState {
+        &self.tools
+    }
+
+    /// Restore saved tool state (user settings at start-up, or carried to a new session).
+    pub fn set_tools(&mut self, tools: crate::tools::ToolState) {
+        let generation = self.tools.generation.max(tools.generation) + 1;
+        self.tools = tools;
+        self.tools.generation = generation;
     }
 
     /// Number of journaled commands (cheap; for "unsaved changes" tracking).
@@ -198,6 +213,10 @@ impl Session {
 
     /// Execute a command live: the executor decides merging. On success it is journaled.
     pub fn execute(&mut self, cmd: Command) -> Result<(), ExecError> {
+        if cmd.class() == Class::Tool {
+            // Not journaled: tool state never changes the document (D-018).
+            return self.tools.apply(&cmd).map_err(ExecError);
+        }
         let merge = cmd.class() == Class::Undoable
             && self.merge_open.is_some()
             && self.merge_open == merge_key(&cmd)
@@ -215,6 +234,10 @@ impl Session {
             Class::Session => self.apply_session(cmd),
             Class::Undoable => self.apply_undoable(cmd, merge),
             Class::AppState => self.apply_app_state(cmd),
+            Class::Tool => Err(ExecError(format!(
+                "{} is a tool command; tool commands aren't journaled",
+                cmd.name()
+            ))),
             Class::History => {
                 match cmd {
                     Command::HistoryUndo(_) => self.pos = self.pos.saturating_sub(1),
@@ -343,6 +366,11 @@ impl Session {
     pub fn query(&self, q: &Query) -> Result<Json, ExecError> {
         Ok(match q {
             Query::Commands(_) => commands::registry_json(),
+            Query::Tools(_) => self.tools.tools_json(),
+            Query::Color(_) => self.tools.color_json(),
+            Query::Subtool(p) => self
+                .tools
+                .subtool_json(self.tools.target(p.tool, p.group, p.item)?),
             Query::InputPressureCurve(_) => Json::Array(
                 self.pressure_curve
                     .points()

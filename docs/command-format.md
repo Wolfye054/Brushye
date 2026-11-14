@@ -35,6 +35,9 @@ SP       = 1*( " " / %x09 )             ; parser: spaces or tabs; printer: one s
 ```
 
 - In journals, `seq` starts at 1 and increases by exactly 1 per line. Scripts have no `seq`.
+- Tool commands (`tool.*`, `subtool.*`, `color.*`, class **tool**, D-018) are never written to
+  a journal: they can't change the document, since a stroke records every setting and its
+  colour. A journal line with a tool command is an error.
 - A missing `/<version>` means version 1. The printer always writes the version when it is
   greater than 1, and never writes `/1`.
 - All positional arguments come before all `key=value` arguments. Each key appears at most once.
