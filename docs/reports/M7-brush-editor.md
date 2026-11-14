@@ -1,7 +1,7 @@
 # M7 report: brush editor and alpha polish (2026-11-13)
 
-**Status: feature work done. The alpha waits on two proposals (D-018, D-019) and the
-maintainer's test.** CI is green on Windows, macOS and Linux (run 43550266044).
+**Status: done, pending the maintainer's test.** D-018 and D-019 were approved and are
+implemented (see the update at the end).
 
 ## What works
 - **Sub tools as in CSP (U-011):**
@@ -50,10 +50,6 @@ maintainer's test.** CI is green on Windows, macOS and Linux (run 43550266044).
   dynamics pop-up used to open at the top-left of the screen instead of beside its button.
 
 ## What doesn't work yet / gaps
-- **Tool state isn't on the command layer.** Sub tool edits, tool selection and colour chips
-  live in the app and its settings file, not in commands. Proposal **D-018** fixes this. Under
-  CLAUDE.md I treat this as an alpha blocker.
-- **File dialogs are an in-app path field.** Proposal **D-019** adds native dialogs (`rfd`).
 - **Pressure wizard (CSP's "Adjust pen pressure"):** not built. B-006 recorded its inputs (taps
   at 1/6, 1/2, 5/6 of the maximum pressure, plus the maximum), but the outputs fit no simple
   rule yet. The manual curve editor (File › Pen pressure settings) works.
@@ -66,8 +62,22 @@ maintainer's test.** CI is green on Windows, macOS and Linux (run 43550266044).
 - B-006 wizard output rule (needs more targeted runs, or the maintainer's pen).
 - Tilt dynamics (needs the maintainer's pen; virtual tilt not proven under Wine).
 
+## Update: D-018 and D-019 (2026-11-13)
+- **Tool state is on the command layer (D-018).** 15 commands (`tool.select`, `subtool.select`,
+  `.set`, `.add`, `.copy`, `.delete`, `.move`, `.lock`, `.reset`, `.save_default`,
+  `.show_row`, `.add_defaults`, `.group_set`, `color.set`, `color.active`) and 3 queries
+  (`?tools`, `?subtool`, `?color`). The model lives in `brushye-command::tools`. The session
+  holds it and keeps it across `doc.new` and file opens. Every palette, the Sub Tool Detail
+  window, the brush size palette, shortcuts, import, and the colour palette and chips now
+  change it only through commands. Tool commands aren't written to the document journal
+  (refinement recorded in D-018).
+- **Native file dialogs (D-019):** Open, Save as, Save duplicate, Export PNG, and sub tool
+  import and export use the OS dialogs via `rfd` 0.17.
+- **Checked:** unit tests for every command, a test that the palettes' edit-to-command
+  conversion reproduces an edit, and a run in the app on a 1920×1080 test display (tool and
+  sub tool selection, brush size presets, colour ring, copy, a stroke in the chosen colour,
+  saved settings).
+
 ## Proposed next step
-1. The maintainer approves (or changes) D-018 and D-019.
-2. I implement both (about 2 days).
-3. The maintainer tests the brush editor with their pen.
-4. Tag `v0.1.0-alpha` and publish the draft release. Then M8, `.sut` import.
+1. The maintainer tests the brush editor and the file dialogs with their pen.
+2. Tag `v0.1.0-alpha` and publish the draft release. Then M8, `.sut` import.

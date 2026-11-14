@@ -10,8 +10,9 @@ use eframe::egui::{self, Color32, ColorImage, Rect, Sense, Stroke, TextureHandle
 use super::theme::{Colors, m};
 use super::tools::{self, SubTool, TOOLS, ToolId};
 use super::widgets;
-use super::{UiState, rows};
+use super::{UiState, rows, tool_cmds};
 use crate::icons;
+use brushye_command::tools::Target;
 
 // ---------------------------------------------------------------- tool column
 
@@ -35,7 +36,7 @@ pub fn tool_column(ui: &mut Ui, c: &Colors, st: &mut UiState, r: Rect) {
     widgets::draw_icon(
         ui,
         pos2(title_r.left() + 26.0, title_r.center().y),
-        tools::info(st.tool).icon,
+        tools::info(st.tools.tool).icon,
         12.0,
         c.icon,
     );
@@ -61,11 +62,11 @@ pub fn tool_column(ui: &mut Ui, c: &Colors, st: &mut UiState, r: Rect) {
                 &tip,
                 vec2(24.0, 22.0),
                 t.available,
-                st.tool == t.id,
+                st.tools.tool == t.id,
             )
         });
         if resp.clicked() {
-            st.tool = t.id;
+            st.select_tool(t.id);
         }
         y += 25.0;
         if y > r.bottom() - 70.0 {
@@ -152,19 +153,20 @@ pub enum SubToolDialog {
     Export { path: String },
 }
 
-/// Revert a locked sub tool that is being left (U-010 lock).
-fn leave(set: &mut tools::ToolSet) {
-    if let Some(s) = set.current_mut()
-        && let Some(base) = s.base.clone()
-    {
-        s.preset = base;
+/// Queue the commands that turn the current sub tool of `tool` into `new`.
+fn queue_changes(st: &mut UiState, tool: ToolId, new: &SubTool) {
+    if let Ok(t) = st.tools.target(Some(tool), None, None) {
+        let old = st.tools.get(t).clone();
+        for cmd in tool_cmds::changes(t, &old, new) {
+            st.cmd(cmd);
+        }
     }
 }
 
 /// The sub tool menu shared by the palette's ≡ button and a row's right-click (U-011).
 fn sub_tool_menu(ui: &mut Ui, st: &mut UiState, palette: bool) {
-    let tool = st.tool;
-    let Some(set) = st.sets.get(&tool) else {
+    let tool = st.tools.tool;
+    let Some(set) = st.tools.sets.get(&tool) else {
         return;
     };
     let cur = set.current().cloned();
@@ -178,7 +180,7 @@ fn sub_tool_menu(ui: &mut Ui, st: &mut UiState, palette: bool) {
         r.clicked()
     };
     if palette && item(ui, "Sub tool group settings…", true) {
-        let name = st.sets[&tool].groups[group].name.clone();
+        let name = st.tools.sets[&tool].groups[group].name.clone();
         st.subtool_dialog = Some(SubToolDialog::Group { group, name });
     }
     if palette {
@@ -196,7 +198,7 @@ fn sub_tool_menu(ui: &mut Ui, st: &mut UiState, palette: bool) {
             });
         }
         if item(ui, "Delete sub tool", count > 1) {
-            let sel = st.sets[&tool].groups[group].selected;
+            let sel = st.tools.sets[&tool].groups[group].selected;
             st.pending_subtool_op = Some(SubToolOp::Delete(sel));
         }
     }
@@ -311,7 +313,7 @@ fn sub_tool_menu(ui: &mut Ui, st: &mut UiState, palette: bool) {
 }
 
 pub fn sub_tool(ui: &mut Ui, c: &Colors, st: &mut UiState, r: Rect) {
-    let tool = st.tool;
+    let tool = st.tools.tool;
     let title_r = Rect::from_min_size(r.min, vec2(r.width(), m::TITLE_BAR));
     let menu = widgets::title(
         ui,
@@ -323,7 +325,7 @@ pub fn sub_tool(ui: &mut Ui, c: &Colors, st: &mut UiState, r: Rect) {
     egui::Popup::menu(&menu).show(|ui| sub_tool_menu(ui, st, true));
     let body = Rect::from_min_max(pos2(r.left(), title_r.bottom()), r.max);
     widgets::fill(ui, body, c.body);
-    let Some(mut set) = st.sets.get(&tool).cloned() else {
+    let Some(set) = st.tools.sets.get(&tool).cloned() else {
         ui.painter().text(
             body.center(),
             egui::Align2::CENTER_CENTER,
@@ -351,7 +353,7 @@ pub fn sub_tool(ui: &mut Ui, c: &Colors, st: &mut UiState, r: Rect) {
         widgets::draw_icon(
             ui,
             pos2(tr.left() + 12.0, tr.center().y),
-            g.icon,
+            tools::group_icon(tool, i),
             13.0,
             c.icon,
         );
@@ -379,8 +381,7 @@ pub fn sub_tool(ui: &mut Ui, c: &Colors, st: &mut UiState, r: Rect) {
         });
     }
     if let Some(i) = switch_group {
-        leave(&mut set);
-        set.group = i;
+        st.cmd(tool_cmds::select_group(tool, i));
     }
     y += set.groups.len().div_ceil(2) as f32 * 28.0 + 1.0;
     let bar_h = if st.prefs.subtool_bar {
@@ -501,16 +502,18 @@ pub fn sub_tool(ui: &mut Ui, c: &Colors, st: &mut UiState, r: Rect) {
             });
     });
     if let Some(i) = select
-        && i != set.groups[group].selected
+        && i != selected
     {
-        leave(&mut set);
-        set.groups[group].selected = i;
+        st.cmd(tool_cmds::select(Target {
+            tool,
+            group,
+            item: i,
+        }));
     }
     if let Some((from, to)) = drop {
-        let g = &mut set.groups[group];
-        let it = g.items.remove(from);
-        g.items.insert(to, it);
-        g.selected = to;
+        let at = |item| Target { tool, group, item };
+        st.cmd(tool_cmds::move_to(at(from), to));
+        st.cmd(tool_cmds::select(at(to)));
     }
     if st.prefs.subtool_bar {
         let bottom = Rect::from_min_max(pos2(body.left(), list.bottom() + 1.0), body.max);
@@ -560,11 +563,7 @@ pub fn sub_tool(ui: &mut Ui, c: &Colors, st: &mut UiState, r: Rect) {
             });
         });
     }
-    apply_op(st, tool, &mut set);
-    if st.sets.get(&tool) != Some(&set) {
-        st.sets.insert(tool, set);
-        st.sets_dirty = true;
-    }
+    apply_op(st, tool);
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -577,72 +576,29 @@ pub enum SubToolOp {
     SaveDefault,
 }
 
-fn apply_op(st: &mut UiState, tool: ToolId, set: &mut tools::ToolSet) {
+fn apply_op(st: &mut UiState, tool: ToolId) {
     let Some(op) = st.pending_subtool_op.take() else {
         return;
     };
-    let gi = set.group;
-    match op {
-        SubToolOp::Copy(i) => {
-            let g = &mut set.groups[gi];
-            if let Some(s) = g.items.get(i).cloned() {
-                let mut s2 = s;
-                s2.name = format!("{} 2", s2.name);
-                g.items.insert(i + 1, s2);
-                g.selected = i + 1;
-            }
-        }
-        SubToolOp::Delete(i) => {
-            let g = &mut set.groups[gi];
-            if g.items.len() > 1 && i < g.items.len() {
-                g.items.remove(i);
-                g.selected = g.selected.min(g.items.len() - 1);
-            }
-        }
-        SubToolOp::AddDefaults => {
-            // Add back any built-in sub tools missing from their group.
-            if let Some(d) = tools::default_set(tool) {
-                for (dg, g) in d.groups.iter().zip(set.groups.iter_mut()) {
-                    for s in &dg.items {
-                        if !g.items.iter().any(|x| x.name == s.name) {
-                            g.items.push(s.clone());
-                        }
-                    }
-                }
-            }
-        }
-        SubToolOp::ToggleLock => {
-            if let Some(s) = set.current_mut() {
-                s.base = if s.locked() {
-                    None
-                } else {
-                    Some(s.preset.clone())
-                };
-            }
-        }
-        SubToolOp::Reset => {
-            if let Some(s) = set.current_mut() {
-                let d = s
-                    .user_default
-                    .clone()
-                    .or_else(|| tools::builtin_default(tool, &s.name));
-                if let Some(d) = d {
-                    s.preset = d;
-                }
-            }
-        }
-        SubToolOp::SaveDefault => {
-            if let Some(s) = set.current_mut() {
-                s.user_default = Some(s.preset.clone());
-            }
-        }
-    }
+    let Ok(cur) = st.tools.target(Some(tool), None, None) else {
+        return;
+    };
+    let at = |item| Target { item, ..cur };
+    let cmd = match op {
+        SubToolOp::Copy(i) => tool_cmds::copy(at(i), None),
+        SubToolOp::Delete(i) => tool_cmds::delete(at(i)),
+        SubToolOp::AddDefaults => tool_cmds::add_defaults(tool),
+        SubToolOp::ToggleLock => tool_cmds::lock(cur, !st.tools.get(cur).locked()),
+        SubToolOp::Reset => tool_cmds::reset(cur),
+        SubToolOp::SaveDefault => tool_cmds::save_default(cur),
+    };
+    st.cmd(cmd);
 }
 
 /// Sub Tool palette dialogs (U-011).
 pub fn sub_tool_dialogs(ctx: &egui::Context, st: &mut UiState) -> Option<String> {
     let mut d = st.subtool_dialog.take()?;
-    let tool = st.tool;
+    let tool = st.tools.tool;
     let mut open = true;
     let mut done = false;
     let mut status = None;
@@ -688,72 +644,37 @@ pub fn sub_tool_dialogs(ctx: &egui::Context, st: &mut UiState) -> Option<String>
             ui.horizontal(|ui| {
                 if ui.button("OK").clicked() {
                     done = true;
-                    let Some(set) = st.sets.get_mut(&tool) else {
-                        return;
-                    };
-                    let gi = set.group;
+                    let cur = st.tools.target(Some(tool), None, None).ok();
                     match &d {
                         SubToolDialog::Group { group, name } => {
-                            if let Some(g) = set.groups.get_mut(*group)
-                                && !name.trim().is_empty()
-                            {
-                                g.name = name.trim().to_owned();
+                            if !name.trim().is_empty() {
+                                st.cmd(tool_cmds::rename_group(tool, *group, name));
                             }
                         }
                         SubToolDialog::Duplicate { name } => {
-                            if let Some(s) = set.current().cloned() {
-                                let g = &mut set.groups[gi];
-                                let mut s2 = s;
-                                s2.name = name.trim().to_owned();
-                                s2.base = None;
-                                g.items.insert(g.selected + 1, s2);
-                                g.selected += 1;
+                            if let Some(t) = cur {
+                                st.cmd(tool_cmds::copy(t, Some(name.clone())));
                             }
                         }
                         SubToolDialog::Settings { name } => {
-                            if let Some(s) = set.current_mut()
+                            if let Some(t) = cur
                                 && !name.trim().is_empty()
                             {
-                                s.name = name.trim().to_owned();
+                                let old = st.tools.get(t).clone();
+                                let mut new = old.clone();
+                                new.name = name.trim().to_owned();
+                                for cmd in tool_cmds::changes(t, &old, &new) {
+                                    st.cmd(cmd);
+                                }
                             }
                         }
                         SubToolDialog::Create { name } => {
-                            let preset = tools::default_set(tool).and_then(|d| {
-                                d.groups
-                                    .first()
-                                    .and_then(|g| g.items.first())
-                                    .map(|s| s.preset.clone())
-                            });
-                            if let Some(p) = preset {
-                                let g = &mut set.groups[gi];
-                                g.items.push(SubTool::new(tool, name.trim(), p));
-                                g.selected = g.items.len() - 1;
-                            }
+                            st.cmd(tool_cmds::add(tool, name.trim(), None));
                         }
                         SubToolDialog::Export { path } => {
-                            if let Some(s) = set.current() {
-                                let b = brushye_format::brush_file::BrushFile {
-                                    name: s.name.clone(),
-                                    settings: s.preset.to_json(),
-                                    images: Default::default(),
-                                };
-                                let res = brushye_format::brush_file::save(&b)
-                                    .map_err(|e| e.to_string())
-                                    .and_then(|bytes| {
-                                        brushye_format::brsh::write_atomic(
-                                            std::path::Path::new(path.trim()),
-                                            &bytes,
-                                        )
-                                        .map_err(|e| e.to_string())
-                                    });
-                                status = Some(match res {
-                                    Ok(()) => format!("Exported “{}” to {}", s.name, path.trim()),
-                                    Err(e) => e,
-                                });
-                            }
+                            status = Some(export_sub_tool(st, path.trim()));
                         }
                     }
-                    st.sets_dirty = true;
                 }
                 if ui.button("Cancel").clicked() {
                     done = true;
@@ -764,6 +685,28 @@ pub fn sub_tool_dialogs(ctx: &egui::Context, st: &mut UiState) -> Option<String>
         st.subtool_dialog = Some(d);
     }
     status
+}
+
+/// Export the current sub tool as a `.brshbrush` file; returns the status message.
+pub fn export_sub_tool(st: &UiState, path: &str) -> String {
+    let Some(s) = st.tools.current(st.tools.tool) else {
+        return "Choose a sub tool first".into();
+    };
+    let b = brushye_format::brush_file::BrushFile {
+        name: s.name.clone(),
+        settings: s.preset.to_json(),
+        images: Default::default(),
+    };
+    let res = brushye_format::brush_file::save(&b)
+        .map_err(|e| e.to_string())
+        .and_then(|bytes| {
+            brushye_format::brsh::write_atomic(std::path::Path::new(path), &bytes)
+                .map_err(|e| e.to_string())
+        });
+    match res {
+        Ok(()) => format!("Exported “{}” to {path}", s.name),
+        Err(e) => e,
+    }
 }
 
 // ---------------------------------------------------------------- tool property
@@ -778,8 +721,9 @@ fn shown_rows(s: &SubTool) -> Vec<rows::Row> {
 }
 
 fn tool_property_menu(ui: &mut Ui, st: &mut UiState) {
-    let tool = st.tool;
+    let tool = st.tools.tool;
     let locked = st
+        .tools
         .sets
         .get(&tool)
         .and_then(|s| s.current())
@@ -827,8 +771,9 @@ fn tool_property_menu(ui: &mut Ui, st: &mut UiState) {
 }
 
 pub fn tool_property(ui: &mut Ui, c: &Colors, st: &mut UiState, r: Rect) {
-    let tool = st.tool;
+    let tool = st.tools.tool;
     let name = st
+        .tools
         .sets
         .get(&tool)
         .and_then(|s| s.current())
@@ -843,13 +788,7 @@ pub fn tool_property(ui: &mut Ui, c: &Colors, st: &mut UiState, r: Rect) {
         &format!("Tool property: {name}"),
     );
     egui::Popup::menu(&menu).show(|ui| tool_property_menu(ui, st));
-    if let Some(mut set) = st.sets.get(&tool).cloned()
-        && st.pending_subtool_op.is_some()
-    {
-        apply_op(st, tool, &mut set);
-        st.sets.insert(tool, set);
-        st.sets_dirty = true;
-    }
+    apply_op(st, tool);
     let body = Rect::from_min_max(pos2(r.left(), title_r.bottom()), r.max);
     widgets::fill(ui, body, c.body);
     let bar_h = if st.prefs.tool_property_bar {
@@ -858,7 +797,7 @@ pub fn tool_property(ui: &mut Ui, c: &Colors, st: &mut UiState, r: Rect) {
         0.0
     };
     let bottom = Rect::from_min_max(pos2(body.left(), body.bottom() - bar_h), body.max);
-    let Some(mut sub) = st.sets.get(&tool).and_then(|s| s.current()).cloned() else {
+    let Some(mut sub) = st.tools.sets.get(&tool).and_then(|s| s.current()).cloned() else {
         tool_property_other(
             ui,
             c,
@@ -981,19 +920,14 @@ pub fn tool_property(ui: &mut Ui, c: &Colors, st: &mut UiState, r: Rect) {
             });
         });
     }
-    if let Some(s) = st.sets.get_mut(&tool).and_then(|s| s.current_mut())
-        && *s != sub
-    {
-        *s = sub;
-        st.sets_dirty = true;
-    }
+    queue_changes(st, tool, &sub);
 }
 
 /// Tool property for tools without sub tools.
 fn tool_property_other(ui: &mut Ui, c: &Colors, st: &mut UiState, r: Rect) {
     widgets::area(ui, r, |ui| {
         ui.add_space(6.0);
-        match st.tool {
+        match st.tools.tool {
             ToolId::Zoom => {
                 ui.label("  Click to zoom in, Alt+click to zoom out.");
             }
@@ -1028,7 +962,7 @@ pub fn dynamics_popup(ctx: &egui::Context, st: &mut UiState) {
     let Some(target) = st.dynamics_popup else {
         return;
     };
-    let tool = st.tool;
+    let tool = st.tools.tool;
     let Some(mut p) = st.current_preset(tool).cloned() else {
         st.dynamics_popup = None;
         return;
@@ -1154,11 +1088,11 @@ pub fn dynamics_popup(ctx: &egui::Context, st: &mut UiState) {
     if !open {
         st.dynamics_popup = None;
     }
-    if let Some(s) = st.sets.get_mut(&tool).and_then(|s| s.current_mut())
-        && s.preset != p
+    if let Some(mut sub) = st.tools.current(tool).cloned()
+        && sub.preset != p
     {
-        s.preset = p;
-        st.sets_dirty = true;
+        sub.preset = p;
+        queue_changes(st, tool, &sub);
     }
 }
 
@@ -1187,7 +1121,7 @@ fn brush_size_menu(ui: &mut Ui, st: &mut UiState, cur: Option<f64>) {
     {
         st.brush_sizes.push(v);
         st.brush_sizes.sort_by(f64::total_cmp);
-        st.sets_dirty = true;
+        st.prefs_dirty = true;
         ui.close();
     }
     if ui
@@ -1196,7 +1130,7 @@ fn brush_size_menu(ui: &mut Ui, st: &mut UiState, cur: Option<f64>) {
         && let Some(v) = cur
     {
         st.brush_sizes.retain(|s| (s - v).abs() >= 1e-9);
-        st.sets_dirty = true;
+        st.prefs_dirty = true;
         ui.close();
     }
     ui.separator();
@@ -1207,8 +1141,9 @@ fn brush_size_menu(ui: &mut Ui, st: &mut UiState, cur: Option<f64>) {
 }
 
 pub fn brush_size(ui: &mut Ui, c: &Colors, st: &mut UiState, r: Rect) {
-    let tool = st.tool;
+    let tool = st.tools.tool;
     let name = st
+        .tools
         .sets
         .get(&tool)
         .and_then(|s| s.current())
@@ -1295,10 +1230,10 @@ pub fn brush_size(ui: &mut Ui, c: &Colors, st: &mut UiState, r: Rect) {
             });
     });
     if let Some(size) = pick
-        && let Some(s) = st.sets.get_mut(&tool).and_then(|s| s.current_mut())
+        && let Some(mut sub) = st.tools.current(tool).cloned()
     {
-        s.preset.size = size;
-        st.sets_dirty = true;
+        sub.preset.size = size;
+        queue_changes(st, tool, &sub);
     }
 }
 
@@ -1311,12 +1246,13 @@ pub fn detail_window(ctx: &egui::Context, st: &mut UiState) {
     if !st.detail_open {
         return;
     }
-    let tool = st.tool;
-    let Some(mut sub) = st.sets.get(&tool).and_then(|s| s.current()).cloned() else {
+    let tool = st.tools.tool;
+    let Some(mut sub) = st.tools.sets.get(&tool).and_then(|s| s.current()).cloned() else {
         return;
     };
     let c = st.colors();
     let others: Vec<(usize, usize, String)> = st
+        .tools
         .sets
         .get(&tool)
         .map(|set| {
@@ -1510,26 +1446,22 @@ pub fn detail_window(ctx: &egui::Context, st: &mut UiState) {
             }
         });
     st.detail_open = open;
-    if let Some(set) = st.sets.get_mut(&tool) {
-        if let Some((row, status, gi, ii)) = copy
-            && let Some(target) = set.groups.get_mut(gi).and_then(|g| g.items.get_mut(ii))
-        {
-            copy_row(row, status, &sub, target);
+    if let Some((row, status, gi, ii)) = copy
+        && let Ok(t) = st
+            .tools
+            .target(Some(tool), Some(gi as u32), Some(ii as u32))
+    {
+        let old = st.tools.get(t).clone();
+        let mut new = old.clone();
+        copy_row(row, status, &sub, &mut new);
+        for cmd in tool_cmds::changes(t, &old, &new) {
+            st.cmd(cmd);
         }
-        if let Some(s) = set.current_mut()
-            && *s != sub
-            && sub.preset.validate().is_ok()
-        {
-            *s = sub;
-        }
-        st.sets_dirty = true;
     }
+    queue_changes(st, tool, &sub);
     if op.is_some() {
         st.pending_subtool_op = op;
-        if let Some(mut set) = st.sets.get(&tool).cloned() {
-            apply_op(st, tool, &mut set);
-            st.sets.insert(tool, set);
-        }
+        apply_op(st, tool);
     }
 }
 

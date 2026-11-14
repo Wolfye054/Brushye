@@ -122,6 +122,8 @@ pub struct App {
     autosave_cache: TileCache,
     /// Set when the document was recovered from an autosave ("<name>[Restore]", as in CSP).
     restored: Option<String>,
+    /// Tool state generation last written to the settings file.
+    tools_saved: u64,
 }
 
 /// Seconds between autosave snapshots while there are unsaved changes.
@@ -217,7 +219,12 @@ impl App {
             autosaved_at: 0.0,
             autosave_cache: TileCache::default(),
             restored: None,
+            tools_saved: 0,
         };
+        // The user's saved sub tools become the session's tool state (D-018).
+        app.session.set_tools(app.ui.tools.clone());
+        app.tools_saved = app.session.tools().generation;
+        app.sync_tools();
         app.status = if gpu_ready {
             format!("GPU: {adapter}")
         } else {
@@ -565,10 +572,34 @@ impl App {
     }
 
     pub(crate) fn scale_brush(&mut self, k: f64) {
-        let tool = self.ui.tool;
-        if let Some(s) = self.ui.sets.get_mut(&tool).and_then(|s| s.current_mut()) {
-            s.preset.size = (s.preset.size * k).clamp(0.5, 2000.0);
-            self.ui.sets_dirty = true;
+        let tools = self.session.tools();
+        if let Ok(t) = tools.target(None, None, None) {
+            let old = tools.get(t).clone();
+            let mut new = old.clone();
+            new.preset.size = (new.preset.size * k).clamp(0.5, 2000.0);
+            for cmd in crate::ui::tool_cmds::changes(t, &old, &new) {
+                self.exec(cmd);
+            }
+            self.sync_tools();
+        }
+    }
+
+    /// Run the commands the UI queued this frame, then refresh its mirror of the tool state.
+    pub(crate) fn run_ui_commands(&mut self) {
+        let mut cmds = std::mem::take(&mut self.ui.cmds);
+        cmds.append(&mut self.ui.colour.cmds);
+        for cmd in cmds {
+            self.exec(cmd);
+        }
+        self.sync_tools();
+    }
+
+    /// Refresh the UI's mirror of the session's tools, sub tools and colours if they changed.
+    pub(crate) fn sync_tools(&mut self) {
+        let t = self.session.tools();
+        if t.generation != self.ui.tools.generation {
+            self.ui.tools = t.clone();
+            self.ui.colour.mirror(t);
         }
     }
 
@@ -604,15 +635,16 @@ impl App {
 
     /// Save edited sub tools when the pointer is up (they're per-user settings, like CSP's).
     pub(crate) fn save_subtools_if_idle(&mut self, ctx: &egui::Context) {
-        if !self.ui.sets_dirty || self.live.is_some() || ctx.input(|i| i.pointer.any_down()) {
+        let generation = self.session.tools().generation;
+        if (generation == self.tools_saved && !self.ui.prefs_dirty)
+            || self.live.is_some()
+            || ctx.input(|i| i.pointer.any_down())
+        {
             return;
         }
-        self.ui.sets_dirty = false;
-        for (tool, set) in &self.ui.sets {
-            self.settings
-                .subtools
-                .insert(tool.key().into(), crate::ui::tools::to_json(set));
-        }
+        self.tools_saved = generation;
+        self.ui.prefs_dirty = false;
+        self.settings.subtools = self.session.tools().saved();
         self.settings.ui = self.ui.ui_json();
         self.save_settings();
     }
@@ -624,18 +656,16 @@ impl App {
             .and_then(|(b, _)| BrushPreset::from_json(&b.settings).map(|p| (b.name, p)));
         match result {
             Ok((name, preset)) => {
-                let tool = self.ui.tool;
-                if let Some(set) = self.ui.sets.get_mut(&tool) {
-                    let g = set.group;
-                    let group = &mut set.groups[g];
-                    group
-                        .items
-                        .push(crate::ui::tools::SubTool::new(tool, &name, preset));
-                    group.selected = group.items.len() - 1;
-                    self.ui.sets_dirty = true;
-                    self.status = format!("Imported “{name}”");
-                } else {
+                let tool = self.ui.tools.tool;
+                if !tool.is_brush() {
                     self.status = "Choose a brush tool first".into();
+                } else if self.exec(crate::ui::tool_cmds::add(
+                    tool,
+                    &name,
+                    Some(preset.to_text()),
+                )) {
+                    self.sync_tools();
+                    self.status = format!("Imported “{name}”");
                 }
             }
             Err(e) => self.status = e,
@@ -646,6 +676,8 @@ impl App {
 
     fn replace_session(&mut self, mut s: Session, path: Option<PathBuf>) {
         apply_settings(&mut s, &self.settings);
+        // Tools and colours are application state: they carry over to the new document.
+        s.set_tools(self.session.tools().clone());
         // The previous document's changes were saved or deliberately discarded.
         self.clear_autosave();
         self.restored = None;
@@ -874,7 +906,7 @@ impl App {
         if eraser_end {
             ToolId::Eraser
         } else {
-            self.ui.tool
+            self.ui.tools.tool
         }
     }
 
@@ -990,7 +1022,7 @@ impl App {
 
     /// A press on the canvas with a non-brush tool (Zoom, Hand, Eyedropper).
     fn tool_press(&mut self, pos: egui::Pos2, alt: bool) -> bool {
-        match self.ui.tool {
+        match self.ui.tools.tool {
             ToolId::Zoom => {
                 let at = self.screen_px(pos);
                 self.view.step_zoom(if alt { -1 } else { 1 }, at);
@@ -1146,7 +1178,8 @@ impl App {
             )
         });
         let typing = ui.ctx().egui_wants_keyboard_input();
-        let hand = self.ui.tool == ToolId::Hand && primary && response.is_pointer_button_down_on();
+        let hand =
+            self.ui.tools.tool == ToolId::Hand && primary && response.is_pointer_button_down_on();
         let navigating = (space && !typing && primary) || middle || hand;
         self.rotate_drag = navigating && shift && space;
         self.pan_drag = navigating && !self.rotate_drag;
@@ -1232,7 +1265,7 @@ impl App {
 
     /// Brush outline at the pointer for brush tools; a tool cursor otherwise.
     fn tool_cursor(&self, ui: &egui::Ui, response: &egui::Response) {
-        match self.ui.tool {
+        match self.ui.tools.tool {
             ToolId::Hand => {
                 response.clone().on_hover_cursor(if self.pan_drag {
                     egui::CursorIcon::Grabbing
@@ -1321,6 +1354,7 @@ impl eframe::App for App {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.sync_tools();
         crate::ui::frame(self, ui);
         let ctx = ui.ctx().clone();
         self.autosave_tick(&ctx);

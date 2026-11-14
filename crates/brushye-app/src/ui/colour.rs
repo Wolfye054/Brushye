@@ -9,12 +9,8 @@ use super::theme::Colors;
 use super::widgets::{self, Tab};
 use crate::icons;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Chip {
-    Main,
-    Sub,
-    Transparent,
-}
+use brushye_command::commands::Command;
+pub use brushye_command::tools::Chip;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SliderMode {
@@ -32,6 +28,9 @@ pub struct ColourState {
     pub history: Vec<[u8; 3]>,
     pub tab: usize,
     pub slider_mode: SliderMode,
+    /// `color.*` commands for changes made here (main, sub and active mirror the session's
+    /// colour chips, D-018; they're updated here at once so the palette reacts this frame).
+    pub cmds: Vec<Command>,
 }
 
 impl Default for ColourState {
@@ -45,6 +44,7 @@ impl Default for ColourState {
             history: Vec::new(),
             tab: 0,
             slider_mode: SliderMode::Rgb,
+            cmds: Vec::new(),
         }
     }
 }
@@ -66,8 +66,41 @@ impl ColourState {
         }
     }
 
+    /// Queue commands for what changed since `before` (main, sub, active).
+    fn emit(&mut self, before: ([u8; 3], [u8; 3], Chip)) {
+        use super::tool_cmds::{color_active, color_set};
+        if self.main != before.0 {
+            self.cmds.push(color_set(Chip::Main, self.main));
+        }
+        if self.sub != before.1 {
+            self.cmds.push(color_set(Chip::Sub, self.sub));
+        }
+        if self.active != before.2 {
+            self.cmds.push(color_active(self.active));
+        }
+    }
+
+    fn snapshot(&self) -> ([u8; 3], [u8; 3], Chip) {
+        (self.main, self.sub, self.active)
+    }
+
+    /// Take the session's chips (after commands ran, or a change made elsewhere).
+    pub fn mirror(&mut self, t: &super::tools::ToolState) {
+        if (self.main, self.sub, self.active) == (t.main, t.sub, t.chip) {
+            return;
+        }
+        let rgb_before = self.active_rgb();
+        self.main = t.main;
+        self.sub = t.sub;
+        self.active = t.chip;
+        if self.active != Chip::Transparent && self.active_rgb() != rgb_before {
+            self.hsv = rgb_to_hsv(self.active_rgb());
+        }
+    }
+
     /// Set the active chip's colour (selecting Main if the transparent chip is active).
     pub fn set(&mut self, rgb: [u8; 3]) {
+        let before = self.snapshot();
         if self.active == Chip::Transparent {
             self.active = Chip::Main;
         }
@@ -86,9 +119,11 @@ impl ColourState {
         } else {
             hsv
         };
+        self.emit(before);
     }
 
     fn set_hsv(&mut self, hsv: [f32; 3]) {
+        let before = self.snapshot();
         self.hsv = hsv;
         let rgb = hsv_to_rgb(hsv);
         if self.active == Chip::Transparent {
@@ -98,13 +133,16 @@ impl ColourState {
             Chip::Sub => self.sub = rgb,
             _ => self.main = rgb,
         }
+        self.emit(before);
     }
 
     pub fn select(&mut self, chip: Chip) {
+        let before = self.snapshot();
         self.active = chip;
         if chip != Chip::Transparent {
             self.hsv = rgb_to_hsv(self.active_rgb());
         }
+        self.emit(before);
     }
 
     /// Record a colour used for drawing (Color History, newest first).
@@ -264,7 +302,7 @@ fn group_menu(ui: &mut Ui, ust: &mut super::UiState) {
             .clicked()
         {
             ust.prefs.hls = false;
-            ust.sets_dirty = true;
+            ust.prefs_dirty = true;
             ui.close();
         }
         if ui
@@ -272,7 +310,7 @@ fn group_menu(ui: &mut Ui, ust: &mut super::UiState) {
             .clicked()
         {
             ust.prefs.hls = true;
-            ust.sets_dirty = true;
+            ust.prefs_dirty = true;
             ui.close();
         }
         ui.separator();

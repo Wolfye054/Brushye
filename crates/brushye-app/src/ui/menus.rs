@@ -519,7 +519,7 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
     if check(ui, "Tool", "", v.tool, true) {
         app.ui.visible.tool = !v.tool;
     }
-    let tool = super::tools::info(app.ui.tool).name;
+    let tool = super::tools::info(app.ui.tools.tool).name;
     let shown = |app: &App, key: &str, dock: bool| dock && !app.ui.hidden.contains(key);
     let toggle = |app: &mut App, key: &'static str, right: bool| {
         if right {
@@ -541,7 +541,13 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
         }
     }
     let detail = app.ui.detail_open;
-    if check(ui, "Sub Tool Detail", "", detail, app.ui.tool.is_brush()) {
+    if check(
+        ui,
+        "Sub Tool Detail",
+        "",
+        detail,
+        app.ui.tools.tool.is_brush(),
+    ) {
         app.ui.detail_open = !detail;
     }
     ui.separator();
@@ -717,9 +723,9 @@ pub fn shortcuts(app: &mut App, ctx: &egui::Context) {
     let cycle = |app: &mut App, ids: &[ToolId]| {
         let i = ids
             .iter()
-            .position(|&t| t == app.ui.tool)
+            .position(|&t| t == app.ui.tools.tool)
             .map_or(0, |i| (i + 1) % ids.len());
-        app.ui.tool = ids[i];
+        app.ui.select_tool(ids[i]);
     };
     if shortcut(ctx, M::NONE, Key::P) {
         cycle(app, &[ToolId::Pen, ToolId::Pencil]);
@@ -738,16 +744,16 @@ pub fn shortcuts(app: &mut App, ctx: &egui::Context) {
         app.ui.colour.select(next);
     }
     if shortcut(ctx, M::NONE, Key::E) {
-        app.ui.tool = ToolId::Eraser;
+        app.ui.select_tool(ToolId::Eraser);
     }
     if shortcut(ctx, M::NONE, Key::I) {
-        app.ui.tool = ToolId::Eyedropper;
+        app.ui.select_tool(ToolId::Eyedropper);
     }
     if shortcut(ctx, M::NONE, Key::Slash) {
-        app.ui.tool = ToolId::Zoom;
+        app.ui.select_tool(ToolId::Zoom);
     }
     if shortcut(ctx, M::NONE, Key::H) {
-        app.ui.tool = ToolId::Hand;
+        app.ui.select_tool(ToolId::Hand);
     }
     if shortcut(ctx, M::NONE, Key::OpenBracket) {
         app.scale_brush(1.0 / 1.2);

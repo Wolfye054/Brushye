@@ -11,6 +11,7 @@ pub mod menus;
 pub mod right;
 pub mod rows;
 pub mod theme;
+pub mod tool_cmds;
 pub mod tools;
 pub mod widgets;
 
@@ -20,7 +21,7 @@ use eframe::egui::{self, Rect, TextureHandle, pos2, vec2};
 
 use crate::app::App;
 use theme::{Interface, m};
-use tools::{ToolId, ToolSet};
+use tools::ToolId;
 
 /// Which palette groups are shown (Window menu).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -146,9 +147,13 @@ pub struct UiState {
     pub subtool_dialog: Option<left::SubToolDialog>,
     pub interface: Interface,
     pub applied_interface: Option<Interface>,
-    pub tool: ToolId,
-    pub sets: HashMap<ToolId, ToolSet>,
-    pub sets_dirty: bool,
+    /// A mirror of the session's tools, sub tools and colour chips (D-018), refreshed when
+    /// they change. The UI reads it and changes it only by queuing commands in `cmds`.
+    pub tools: tools::ToolState,
+    /// Commands queued by the UI this frame; the app runs them after the UI pass.
+    pub cmds: Vec<brushye_command::commands::Command>,
+    /// Palette preferences or brush size presets changed: save the settings.
+    pub prefs_dirty: bool,
     pub colour: colour::ColourState,
     pub previews: HashMap<String, TextureHandle>,
     pub detail_open: bool,
@@ -171,16 +176,6 @@ pub struct UiState {
 
 impl UiState {
     pub fn new(settings: &crate::settings::Settings) -> Self {
-        let mut sets = HashMap::new();
-        for t in tools::TOOLS {
-            if let Some(d) = tools::default_set(t.id) {
-                let saved = settings
-                    .subtools
-                    .get(t.id.key())
-                    .and_then(|j| tools::from_json(t.id, j));
-                sets.insert(t.id, saved.unwrap_or(d));
-            }
-        }
         let ui = serde_json::Value::Object(settings.ui.clone());
         let brush_sizes = ui["brush_sizes"]
             .as_array()
@@ -201,9 +196,9 @@ impl UiState {
             subtool_dialog: None,
             interface: Interface::from_name(&settings.interface),
             applied_interface: None,
-            tool: ToolId::Pen,
-            sets,
-            sets_dirty: false,
+            tools: tools::ToolState::with_saved(&settings.subtools),
+            cmds: Vec::new(),
+            prefs_dirty: false,
             colour: colour::ColourState::default(),
             previews: HashMap::new(),
             detail_open: false,
@@ -233,10 +228,19 @@ impl UiState {
         &self,
         tool: ToolId,
     ) -> Option<&brushye_command::brush_preset::BrushPreset> {
-        self.sets
-            .get(&tool)
-            .and_then(|s| s.current())
-            .map(|s| &s.preset)
+        self.tools.current(tool).map(|s| &s.preset)
+    }
+
+    /// Queue a command (run by the app after the UI pass).
+    pub fn cmd(&mut self, c: brushye_command::commands::Command) {
+        self.cmds.push(c);
+    }
+
+    /// Queue selecting a tool.
+    pub fn select_tool(&mut self, tool: ToolId) {
+        self.cmd(brushye_command::commands::Command::ToolSelect(
+            brushye_command::commands::ToolSelect { tool },
+        ));
     }
 
     /// The UI preferences saved with the user settings.
@@ -444,11 +448,13 @@ pub fn frame(app: &mut App, ui: &mut egui::Ui) {
     chrome::status_strip(app, ui, status);
     chrome::timeline_dock(ui, c, timeline);
 
+    dialogs::native(app);
     left::dynamics_popup(&ctx, &mut app.ui);
     if let Some(s) = left::sub_tool_dialogs(&ctx, &mut app.ui) {
         app.status = s;
     }
     left::detail_window(&ctx, &mut app.ui);
     dialogs::dialogs(app, &ctx);
+    app.run_ui_commands();
     app.save_subtools_if_idle(&ctx);
 }

@@ -507,8 +507,8 @@ crates/
 - **Reason:** exact CSP parity now, without guessing internals; every remaining gap is
   measurable, tracked, and scheduled for observation before the compositor is built.
 
-## D-018 Tool and sub tool state as commands — PROPOSAL (2026-11-13)
-- **Date:** proposed 2026-11-13. Needs maintainer approval (command layer).
+## D-018 Tool and sub tool state as commands — ACCEPTED (2026-11-13)
+- **Date:** proposed and accepted by the maintainer 2026-11-13.
 - **Problem:** CLAUDE.md requires every change to document *or application* state to be a
   command. Since M7 the app keeps the tool set (tools, sub tool groups, sub tools and their
   brush presets, the shown-row lists, locks, user defaults), the current tool and sub tool,
@@ -533,9 +533,16 @@ crates/
   - Make sub tool edits undoable. CSP doesn't, and mixing them with document undo would be
     confusing.
 - **Cost:** about 1–2 days. It mostly moves code and adds commands, tests and docs.
+- **Implemented (2026-11-13), with one refinement:** the tool commands got their own class,
+  **tool**, instead of AppState. They are not undoable, as proposed, and also **not written to
+  the document journal**. Replay starts from the default tool set, not the user's saved one, so
+  a `subtool.select` of a user-made sub tool would fail on replay. Tool state can't affect the
+  document, because strokes carry their settings and colour. Scripts, the CLI and queries use
+  them like any other command (`?tools`, `?subtool`, `?color`). The app's palettes read a
+  mirror of the session's tool state and change it only by queuing commands.
 
-## D-019 Native file dialogs: `rfd` — PROPOSAL (2026-11-13)
-- **Date:** proposed 2026-11-13. Needs maintainer approval (new dependency, D-016 policy).
+## D-019 Native file dialogs: `rfd` — ACCEPTED (2026-11-13)
+- **Date:** proposed and accepted by the maintainer 2026-11-13.
 - **Problem:** Open, Save As, Export and Import Brush use an in-app path text field. CSP uses
   the OS file dialogs.
 - **Proposal:** add `rfd` (MIT, the standard Rust crate for native file dialogs) to
@@ -545,3 +552,8 @@ crates/
 - **Alternatives:**
   - Keep the text field. That is clumsy, and unlike CSP.
   - Write per-OS dialog code ourselves. That is a lot of unsafe FFI for no gain.
+- **Implemented (2026-11-13):** `rfd` 0.17 with default features (XDG portal and Wayland).
+  It adds only `rfd` and `pollster` (MIT/Apache-2.0) to the lock file. 0.18 needs Rust 1.92,
+  above our MSRV (1.88). The dialogs run on the UI thread, which macOS requires. Setting
+  `BRUSHYE_INAPP_DIALOGS=1` keeps the in-app path field (used for test displays without a
+  portal).

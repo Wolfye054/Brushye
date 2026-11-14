@@ -30,6 +30,105 @@ fn path_with_ext(path: &str, ext: &str) -> std::path::PathBuf {
     p
 }
 
+/// Whether to use the OS file dialogs (D-019). `BRUSHYE_INAPP_DIALOGS=1` keeps the in-app path
+/// field instead (for test displays without a desktop portal).
+pub fn native_dialogs() -> bool {
+    std::env::var_os("BRUSHYE_INAPP_DIALOGS").is_none()
+}
+
+/// A native dialog starting at `path` (its folder and file name), filtered to one extension.
+fn file_dialog(path: &str, filter: &str, ext: &str) -> rfd::FileDialog {
+    let p = std::path::Path::new(path.trim());
+    let mut d = rfd::FileDialog::new().add_filter(filter, &[ext]);
+    if let Some(dir) = p.parent().filter(|d| d.is_dir()) {
+        d = d.set_directory(dir);
+    }
+    if let Some(name) = p.file_name() {
+        d = d.set_file_name(name.to_string_lossy());
+    }
+    d
+}
+
+/// Show the OS file dialog for a file dialog that was just requested, then do what the in-app
+/// dialog's OK button does. Cancelling does nothing. Runs on the UI thread (macOS needs that).
+pub fn native(app: &mut App) {
+    if !native_dialogs() {
+        return;
+    }
+    let path_dialog = matches!(
+        app.dialog,
+        Some(
+            Dialog::Open { .. }
+                | Dialog::SaveAs { .. }
+                | Dialog::SaveDuplicate { .. }
+                | Dialog::ExportPng { .. }
+        )
+    );
+    if path_dialog {
+        match app.dialog.take() {
+            Some(Dialog::Open { path }) => {
+                if let Some(p) = file_dialog(&path, "Brushye file", "brsh")
+                    .set_title("Open")
+                    .pick_file()
+                {
+                    app.open_path(&p.to_string_lossy());
+                }
+            }
+            Some(Dialog::SaveAs { path, .. }) => {
+                if let Some(p) = file_dialog(&path, "Brushye file", "brsh")
+                    .set_title("Save as")
+                    .save_file()
+                {
+                    app.save_to(path_with_ext(&p.to_string_lossy(), "brsh"));
+                }
+            }
+            Some(Dialog::SaveDuplicate { path }) => {
+                if let Some(p) = file_dialog(&path, "Brushye file", "brsh")
+                    .set_title("Save duplicate")
+                    .save_file()
+                {
+                    app.save_duplicate(path_with_ext(&p.to_string_lossy(), "brsh"));
+                }
+            }
+            Some(Dialog::ExportPng { path }) => {
+                if let Some(p) = file_dialog(&path, "PNG image", "png")
+                    .set_title("Export (.png)")
+                    .save_file()
+                {
+                    let p = path_with_ext(&p.to_string_lossy(), "png");
+                    app.export_png(&p.to_string_lossy());
+                }
+            }
+            other => app.dialog = other,
+        }
+    }
+    if let Some(path) = app.ui.import_brush.take() {
+        let dir = crate::settings::config_dir().join("brushes");
+        let start = if path.is_empty() {
+            dir.join("brush.brshbrush").to_string_lossy().into_owned()
+        } else {
+            path
+        };
+        if let Some(p) = file_dialog(&start, "Brushye brush", "brshbrush")
+            .set_title("Import sub tool")
+            .pick_file()
+        {
+            app.import_sub_tool(&p.to_string_lossy());
+        }
+    }
+    if let Some(super::left::SubToolDialog::Export { path }) = &app.ui.subtool_dialog {
+        let path = path.clone();
+        app.ui.subtool_dialog = None;
+        if let Some(p) = file_dialog(&path, "Brushye brush", "brshbrush")
+            .set_title("Export sub tool")
+            .save_file()
+        {
+            let p = path_with_ext(&p.to_string_lossy(), "brshbrush");
+            app.status = super::left::export_sub_tool(&app.ui, &p.to_string_lossy());
+        }
+    }
+}
+
 pub fn dialogs(app: &mut App, ctx: &egui::Context) {
     preferences(app, ctx);
     about(app, ctx);

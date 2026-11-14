@@ -419,23 +419,7 @@ pub fn by_key(key: &str) -> Option<&'static RowInfo> {
     ROWS.iter().find(|i| i.key == key)
 }
 
-/// Rows shown in Tool property by default (eye on), per tool kind.
-pub fn default_shown(tool: super::tools::ToolId) -> Vec<String> {
-    use super::tools::ToolId as T;
-    let keys: &[&str] = match tool {
-        T::Brush | T::Airbrush => &["size", "opacity", "hardness", "density", "stabilization"],
-        T::Eraser => &["size", "aa", "hardness"],
-        _ => &[
-            "size",
-            "opacity",
-            "aa",
-            "stabilization",
-            "adjust_by_speed",
-            "vector_magnet",
-        ],
-    };
-    keys.iter().map(|k| (*k).to_owned()).collect()
-}
+pub use brushye_command::tools::default_shown;
 
 /// Which dynamics a row's button opens.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

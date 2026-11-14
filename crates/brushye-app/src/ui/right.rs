@@ -1115,7 +1115,7 @@ fn navigator_menu(app: &mut App, ui: &mut Ui) {
         .clicked()
     {
         app.ui.prefs.navigator_bar = !app.ui.prefs.navigator_bar;
-        app.ui.sets_dirty = true;
+        app.ui.prefs_dirty = true;
         ui.close();
     }
     ui.separator();
@@ -1152,7 +1152,7 @@ fn layer_menu(app: &mut App, ui: &mut Ui) {
             } else {
                 app.ui.prefs.layer_bar = !on;
             }
-            app.ui.sets_dirty = true;
+            app.ui.prefs_dirty = true;
             ui.close();
         }
     }
