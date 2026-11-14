@@ -95,8 +95,13 @@ impl BrushPreset {
         }
     }
 
-    /// Engine settings with an ink colour; validated.
+    /// Engine settings with an ink colour and a linear global pressure curve; validated.
     pub fn settings(&self, color: [u8; 3]) -> Result<BrushSettings, String> {
+        self.settings_with(color, &Curve::linear())
+    }
+
+    /// Engine settings with an ink colour and the session's global pressure curve; validated.
+    pub fn settings_with(&self, color: [u8; 3], global: &Curve) -> Result<BrushSettings, String> {
         let pct = |name: &str, v: Option<u8>, default: f64| -> Result<f64, String> {
             match v {
                 None => Ok(default),
@@ -139,6 +144,7 @@ impl BrushPreset {
             size_pressure: dynamics("size", self.size_pressure, &self.size_curve)?,
             opacity_pressure: dynamics("opacity", self.opacity_pressure, &self.opacity_curve)?,
             density_pressure: dynamics("density", self.density_pressure, &self.density_curve)?,
+            global_pressure: global.clone(),
         };
         s.validate().map_err(|e| e.0)?;
         Ok(s)

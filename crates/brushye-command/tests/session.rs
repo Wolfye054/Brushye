@@ -376,6 +376,50 @@ fn brush_stroke_respects_lock_transparency() {
     );
 }
 
+#[test]
+fn global_pressure_curve_is_journaled_applied_first_and_not_undoable() {
+    let stroke = "brush.stroke L1 color=#000000 size=30 size_pressure=0 samples=[10,30,0.3,0;90,30,0.3,8000]";
+    let mut s = Session::new();
+    run(&mut s, "doc.new 100 60 paper=none\nlayer.new L1");
+    run(&mut s, stroke);
+    let linear = q(&mut s, "?doc.hash");
+    // The same stroke after a "stronger" global curve: thinner (sub(global(P)), B-006).
+    run(
+        &mut s,
+        "history.undo\ninput.pressure_curve points=[0.5,0.1]",
+    );
+    assert_eq!(
+        q(&mut s, "?input.pressure_curve"),
+        serde_json::json!([[0.5, 0.1]])
+    );
+    run(&mut s, stroke);
+    assert_ne!(q(&mut s, "?doc.hash"), linear);
+    assert_eq!(q(&mut s, "?layer.pixel L1 x=50 y=40")[3], 0);
+    let curved = q(&mut s, "?doc.hash");
+    // Not undoable: undo removes the stroke, not the setting.
+    run(&mut s, "history.undo");
+    assert_eq!(
+        q(&mut s, "?input.pressure_curve"),
+        serde_json::json!([[0.5, 0.1]])
+    );
+    run(&mut s, "history.redo");
+    // Changing the curve later doesn't touch strokes already made; replay reproduces both.
+    run(&mut s, "input.pressure_curve points=[]");
+    assert_eq!(q(&mut s, "?doc.hash"), curved);
+    let mut r = Session::replay(&s.journal_text()).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(q(&mut r, "?doc.hash"), curved);
+    assert_eq!(q(&mut r, "?input.pressure_curve"), serde_json::json!([]));
+    // It's an application setting: doc.new keeps it.
+    run(
+        &mut s,
+        "input.pressure_curve points=[0.4,0.6]\ndoc.new 10 10",
+    );
+    assert_eq!(
+        q(&mut s, "?input.pressure_curve"),
+        serde_json::json!([[0.4, 0.6]])
+    );
+}
+
 /// Cross-platform golden value for brush output (D-012): CI runs this on all three OSes.
 #[test]
 fn golden_brush_hash_is_platform_independent() {

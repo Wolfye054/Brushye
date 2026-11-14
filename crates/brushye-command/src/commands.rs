@@ -210,6 +210,18 @@ params! {
     }
 }
 params! {
+    /// Set the global pen pressure adjustment curve (application setting, like CSP's
+    /// File > Pen Pressure Settings): applied to raw pen pressure before every brush setting's
+    /// own curve (spec B-006). Journaled, not undoable, kept across `doc.new`.
+    pub struct InputPressureCurve {
+        points: Curve = key "Interior control points [x,y;…]; [] = linear",
+    }
+}
+params! {
+    /// The global pen pressure adjustment curve.
+    pub struct QInputPressureCurve {}
+}
+params! {
     /// Undo one step.
     pub struct HistoryUndo {}
 }
@@ -375,6 +387,7 @@ registry! {
         BrushStroke(BrushStroke) = "brush.stroke" v 1 Undoable "Paint one brush stroke from input samples",
         LayerShow(LayerShow) = "layer.show" v 1 AppState "Show or hide a layer (not undoable, as in CSP)",
         LayerSelect(LayerSelect) = "layer.select" v 1 AppState "Make a layer the active layer",
+        InputPressureCurve(InputPressureCurve) = "input.pressure_curve" v 1 AppState "Set the global pen pressure adjustment curve",
         HistoryUndo(HistoryUndo) = "history.undo" v 1 History "Undo one step",
         HistoryRedo(HistoryRedo) = "history.redo" v 1 History "Redo one step",
     }
@@ -386,6 +399,7 @@ registry! {
         Pixel(QPixel) = "pixel" "Rendered pixel at x, y (RGBA)",
         LayerPixel(QLayerPixel) = "layer.pixel" "A layer's own pixel at x, y (RGBA)",
         History(QHistory) = "history" "Undo history: step labels and current position",
+        InputPressureCurve(QInputPressureCurve) = "input.pressure_curve" "The global pen pressure curve's control points",
         Commands(QCommands) = "commands" "Command and query registry with parameter schemas",
     }
 }

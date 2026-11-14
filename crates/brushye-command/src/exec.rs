@@ -13,7 +13,7 @@
 
 use std::sync::Arc;
 
-use brushye_core::brush::BrushSettings;
+use brushye_core::brush::{BrushSettings, Curve};
 use brushye_core::document::DocError;
 use brushye_core::{Document, Layer, LayerId, LayerKind, Rgba8};
 use serde_json::{Value as Json, json};
@@ -117,6 +117,8 @@ pub struct Session {
     journal: Vec<RawLine>,
     undo_limit: usize,
     merge_open: Option<MergeKey>,
+    /// Global pen pressure curve (application setting, `input.pressure_curve`).
+    pressure_curve: Curve,
     /// Content hash of the document this session was opened from (`None`: started by
     /// `doc.new`). Recorded in the journal header so replay can check it gets the same base.
     base: Option<u64>,
@@ -137,6 +139,7 @@ impl Session {
             journal: Vec::new(),
             undo_limit: DEFAULT_UNDO_LIMIT,
             merge_open: None,
+            pressure_curve: Curve::linear(),
             base: None,
         }
     }
@@ -154,6 +157,11 @@ impl Session {
         s.base = Some(base);
         s.fix_active();
         s
+    }
+
+    /// The global pen pressure curve (`input.pressure_curve`).
+    pub fn pressure_curve(&self) -> &Curve {
+        &self.pressure_curve
     }
 
     /// Number of journaled commands (cheap; for "unsaved changes" tracking).
@@ -254,7 +262,7 @@ impl Session {
 
     fn apply_undoable(&mut self, cmd: &Command, merge: bool) -> Result<(), ExecError> {
         let mut d = Document::clone(self.doc()?);
-        edit(&mut d, cmd)?;
+        edit(&mut d, cmd, &self.pressure_curve)?;
         let doc = Arc::new(d);
         if merge {
             if self.pos == 0 {
@@ -297,6 +305,10 @@ impl Session {
                 }
                 Ok(())
             }
+            Command::InputPressureCurve(p) => {
+                self.pressure_curve = p.points.clone();
+                Ok(())
+            }
             Command::LayerSelect(p) => {
                 self.doc()?
                     .layer(p.layer)
@@ -331,6 +343,13 @@ impl Session {
     pub fn query(&self, q: &Query) -> Result<Json, ExecError> {
         Ok(match q {
             Query::Commands(_) => commands::registry_json(),
+            Query::InputPressureCurve(_) => Json::Array(
+                self.pressure_curve
+                    .points()
+                    .iter()
+                    .map(|p| json!(p))
+                    .collect(),
+            ),
             Query::History(_) => json!({
                 "position": self.pos,
                 "steps": self.steps.iter().map(|s| s.label).collect::<Vec<_>>(),
@@ -595,7 +614,7 @@ fn layer_json(l: &Layer) -> Json {
 }
 
 /// Apply an undoable command to a document copy.
-fn edit(d: &mut Document, cmd: &Command) -> Result<(), ExecError> {
+fn edit(d: &mut Document, cmd: &Command, pressure_curve: &Curve) -> Result<(), ExecError> {
     match cmd {
         Command::LayerNew(p) => {
             let kind = p.kind.unwrap_or(LayerKind::Raster);
@@ -673,7 +692,7 @@ fn edit(d: &mut Document, cmd: &Command) -> Result<(), ExecError> {
             write_pixels(d, p.layer, 0, 0, w, h, &block)?;
         }
         Command::BrushStroke(p) => {
-            let settings = brush_settings(p)?;
+            let settings = brush_settings(p, pressure_curve)?;
             let bounds = (d.width, d.height);
             let l = d.layer_mut(p.layer)?;
             if l.locked {
@@ -703,14 +722,14 @@ fn edit(d: &mut Document, cmd: &Command) -> Result<(), ExecError> {
 }
 
 /// Brush settings of a `brush.stroke` command (validated by the engine).
-fn brush_settings(p: &commands::BrushStroke) -> Result<BrushSettings, ExecError> {
+fn brush_settings(p: &commands::BrushStroke, global: &Curve) -> Result<BrushSettings, ExecError> {
     if p.color.0[3] != 255 {
         return Err(ExecError(
             "brush.stroke: color must be opaque (#rrggbb); use opacity=… for transparency".into(),
         ));
     }
     crate::brush_preset::BrushPreset::from_stroke(p)
-        .settings([p.color.0[0], p.color.0[1], p.color.0[2]])
+        .settings_with([p.color.0[0], p.color.0[1], p.color.0[2]], global)
         .map_err(|e| ExecError(format!("brush.stroke: {e}")))
 }
 

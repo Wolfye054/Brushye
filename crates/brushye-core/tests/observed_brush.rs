@@ -1076,3 +1076,73 @@ fn b010_thin_tips_and_direction_of_line() {
         assert!(st.bad <= pin, "stroke {k}: {st:?}");
     }
 }
+
+#[test]
+fn b006_global_curve_applies_before_the_setting_curve() {
+    use brushye_core::brush::{Curve, Dynamics};
+    // The wizard's curve, read from CSP's graph to about ±0.01 (B-006 observation 1).
+    let global = Curve::new(vec![[0.08, 0.02], [0.24, 0.30], [0.41, 0.76], [0.50, 1.00]])
+        .unwrap_or_else(|e| panic!("{e}"));
+    let one_pt = Curve::new(vec![[0.5, 0.25]]).unwrap_or_else(|e| panic!("{e}"));
+    let s = |sub: Curve, g: Curve| BrushSettings {
+        size: 100.0,
+        size_pressure: Some(Dynamics {
+            min: 0.0,
+            curve: sub,
+        }),
+        global_pressure: g,
+        ..Default::default()
+    };
+    // Stroke widths (ink rows) for P = 0.05 … 0.45. Above 0.5 CSP's strokes are already full
+    // size while a quadratic B-spline through these graph readings isn't: the wizard curve's
+    // exact type is open (B-006).
+    let worst = |file: &str, settings: &BrushSettings| {
+        let r = pressure_rows(file, settings);
+        r[1..10]
+            .iter()
+            .map(|&(a, b)| a.abs_diff(b))
+            .max()
+            .unwrap_or(0)
+    };
+    let a = worst(
+        "B006_global_auto_grid.png",
+        &s(Curve::linear(), global.clone()),
+    );
+    let b = worst(
+        "B006_global_auto_plus_sub1pt.png",
+        &s(one_pt.clone(), global.clone()),
+    );
+    eprintln!("rows off by at most {a} (global only), {b} (global then sub)");
+    assert!(a <= 2 && b <= 2, "{a} {b}");
+    // The other order, global(sub(P)), fits clearly worse: sub(global(P)) is CSP's order.
+    let swapped = |p: f64| global.eval(one_pt.eval(p));
+    let mine = |p: f64| one_pt.eval(global.eval(p));
+    let gap = (1..10)
+        .map(|i| (swapped(f64::from(i) * 0.05) - mine(f64::from(i) * 0.05)).abs())
+        .fold(0.0f64, f64::max);
+    assert!(gap > 0.1, "{gap}");
+}
+
+/// Ink rows in each stroke's centre column, ours vs CSP's, for the pressure grid.
+fn pressure_rows(file: &str, s: &BrushSettings) -> Vec<(usize, usize)> {
+    use brushye_core::{Document, Rgba8};
+    let grid = pressure_grid(s);
+    let mut layer = Layer::new(LayerId(1), "t", LayerKind::Raster);
+    for (st, _) in &grid {
+        brush::stroke(&mut layer, (1200, 900), &st.s, &st.pts).unwrap_or_else(|e| panic!("{e}"));
+    }
+    let mut doc =
+        Document::new(1200, 900, 72, Some(Rgba8::WHITE)).unwrap_or_else(|e| panic!("{e}"));
+    doc.add_layer(layer, None).unwrap_or_else(|e| panic!("{e}"));
+    let out = brushye_core::render::flatten(&doc);
+    let img = Img::load_spec("brush", file);
+    grid.iter()
+        .map(|(_, (cx, cy))| {
+            let n = |f: &dyn Fn(u32) -> u8| (cy - 60..cy + 60).filter(|&y| f(y) < 250).count();
+            (
+                n(&|y| out.pixel(*cx, y)[0]),
+                n(&|y| img.at(*cx as usize, y as usize)[0]),
+            )
+        })
+        .collect()
+}

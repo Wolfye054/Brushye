@@ -111,6 +111,9 @@ pub struct BrushSettings {
     pub size_pressure: Option<Dynamics>,
     pub opacity_pressure: Option<Dynamics>,
     pub density_pressure: Option<Dynamics>,
+    /// The global pen pressure adjustment (CSP: File > Pen Pressure Settings). Applied to the
+    /// raw pressure before every setting's own curve: sub(global(P)) (B-006).
+    pub global_pressure: Curve,
 }
 
 impl Default for BrushSettings {
@@ -133,6 +136,7 @@ impl Default for BrushSettings {
             size_pressure: None,
             opacity_pressure: None,
             density_pressure: None,
+            global_pressure: Curve::linear(),
         }
     }
 }
@@ -287,7 +291,9 @@ fn lattice(
         let Some(at) = line.at(t, &mut seg) else {
             break;
         };
-        let p = at.pt.p;
+        // Raw pressure decides whether ink is placed; dynamics see the globally adjusted value.
+        let raw = at.pt.p;
+        let p = s.global_pressure.eval(raw);
         let size = s.size * f(&s.size_pressure, p);
         let spacing = (gap * size / 100.0).max(1.0);
         let mut density = s.density * f(&s.density_pressure, p);
@@ -297,7 +303,7 @@ fn lattice(
             density = (density * 3.0 * spacing / size).min(1.0);
         }
         // Zero pressure places no ink (B-004), but the lattice continues.
-        if p > 0.0 && size > 0.0 {
+        if raw > 0.0 && size > 0.0 {
             dabs.push(Dab {
                 x: at.pt.x,
                 y: at.pt.y,
