@@ -185,17 +185,60 @@ fn pct(v: Option<i64>) -> Option<u8> {
     v.map(|v| v.clamp(0, 100) as u8).filter(|v| *v != 100)
 }
 
-/// `CompositeMode` values seen in the samples (sut.md: S-01, S-44..S-47).
+/// `CompositeMode` value → Brushye ink mode name, one sample each (sut.md: S-01, S-44..S-47,
+/// S-70..S-99).
+const INK_MODES: &[(i64, &str)] = &[
+    (0, "normal"),
+    (1, "darken"),
+    (2, "multiply"),
+    (3, "color_burn"),
+    (4, "linear_burn"),
+    (5, "subtract"),
+    (6, "darker_color"),
+    (7, "lighten"),
+    (8, "screen"),
+    (9, "color_dodge"),
+    (10, "glow_dodge"),
+    (11, "add"),
+    (12, "add_glow"),
+    (13, "lighter_color"),
+    (14, "overlay"),
+    (15, "soft_light"),
+    (16, "hard_light"),
+    (17, "vivid_light"),
+    (18, "linear_light"),
+    (19, "pin_light"),
+    (20, "hard_mix"),
+    (21, "difference"),
+    (22, "exclusion"),
+    (23, "hue"),
+    (24, "saturation"),
+    (25, "color"),
+    (26, "brightness"),
+    (27, "erase"),
+    (29, "background"),
+    (31, "replace_alpha"),
+    (32, "black_burn"),
+    (33, "white_burn"),
+    (34, "compare_density"),
+    (35, "erase_compare"),
+    (36, "divide"),
+];
+
 fn ink_mode(v: i64) -> Option<InkMode> {
-    Some(match v {
-        0 => InkMode::Normal,
-        2 => InkMode::Multiply,
-        29 => InkMode::Background,
-        31 => InkMode::ReplaceAlpha,
-        34 => InkMode::CompareDensity,
-        _ => return None,
-    })
+    INK_MODES
+        .iter()
+        .find(|(k, _)| *k == v)
+        .and_then(|(_, name)| InkMode::from_name(name))
 }
+
+/// `BrushHardness` of the 5 segments of CSP's hardness bar, levels 1..=5 (S-63..S-67). These
+/// are the levels Brushye's tips were measured at (B-009).
+const HARDNESS_LEVELS: [i64; 5] = [1, 30, 60, 95, 100];
+
+/// `BrushRotationEffector` values seen: 3 = none (S-01), 67 = Direction of line (S-110).
+const ANGLE_NONE: i64 = 3;
+const ANGLE_DIRECTION_OF_LINE: i64 = 67;
 
 /// Map one settings row to a preset (sut.md, "Brush settings").
 fn map(name: &str, row: &Row) -> Result<SubTool, SutError> {
@@ -229,12 +272,22 @@ fn map(name: &str, row: &Row) -> Result<SubTool, SutError> {
     let hardness = match int(row, "BrushHardness") {
         None | Some(100) => None,
         Some(v) => {
-            // Open item 1 (sut.md): which stored values the 5 levels are is being observed.
-            approx(
-                "Hardness",
-                format!("{v} of 100 drawn with the hardest tip (level 5)"),
-            );
-            None
+            // The nearest of the 5 measured levels; exact for the bar's own values.
+            let (i, level) = HARDNESS_LEVELS
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, l)| (*l - v).abs())
+                .unwrap_or((4, &100));
+            if *level != v {
+                approx(
+                    "Hardness",
+                    format!(
+                        "{v} of 100 drawn as level {} ({level}); values between the bar's steps aren't measured",
+                        i + 1
+                    ),
+                );
+            }
+            Some(i as u8 + 1).filter(|l| *l != 5)
         }
     };
     let thickness = int(row, "BrushThickness")
@@ -276,6 +329,18 @@ fn map(name: &str, row: &Row) -> Result<SubTool, SutError> {
                 .into(),
         });
     }
+    let angle_line = match int(row, "BrushRotationEffector") {
+        None | Some(ANGLE_NONE) => None,
+        Some(ANGLE_DIRECTION_OF_LINE) => Some(true),
+        Some(v) => {
+            notes.push(Note::NotImported {
+                feature: "Angle dynamics".into(),
+                detail: format!("input {v} (direction of pen, tilt or random) isn't supported"),
+            });
+            None
+        }
+    };
+    let density_by_gap = on(row, "BrushAdjustFlowByInterval").then_some(true);
     let mut dynamics = |label: &str, col: &str| -> (Option<u8>, Option<Curve>) {
         let Some(b) = blob(row, col) else {
             return (None, None);
@@ -306,11 +371,11 @@ fn map(name: &str, row: &Row) -> Result<SubTool, SutError> {
         density: pct(int(row, "BrushFlow")),
         ink,
         gap,
-        density_by_gap: None,
+        density_by_gap,
         thickness,
         direction,
         angle,
-        angle_line: None,
+        angle_line,
         stabilization,
         size_pressure,
         size_curve,
@@ -359,7 +424,15 @@ fn unmapped(row: &Row) -> Vec<Note> {
         ),
         ("UseDualBrush", "2-Brush shape", "dual brush"),
         ("BrushRibbon", "Ribbon", "ribbon tip"),
+        (
+            "BrushSizeSyncViewScale",
+            "Specify by size on screen",
+            "size follows the zoom",
+        ),
+        ("BrushAtLeast1Pixel", "At least 1 pixel", "minimum dab size"),
     ];
+    // BrushUseVectorEraser (on for eraser sub tools, S-115) only affects vector layers, which
+    // Brushye doesn't have, so it isn't reported.
     for (col, feature, detail) in flags {
         if on(row, col) {
             add(feature, detail);

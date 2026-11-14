@@ -55,7 +55,34 @@ fn samples_import_with_the_mapped_settings() {
         ("S-47", "ink=replace_alpha "),
         ("S-51", "size_pressure=0"),
         ("S-52", "stabilization=30 "),
+        ("S-63", "hardness=1 "),
+        ("S-64", "hardness=2 "),
+        ("S-65", "hardness=3 "),
+        ("S-66", "hardness=4 "),
+        ("S-68", "hardness=3 "),
+        ("S-70", "ink=darken "),
+        ("S-73", "ink=black_burn "),
+        ("S-81", "ink=add_glow "),
+        ("S-87", "ink=erase_compare "),
+        ("S-93", "ink=darker_color "),
+        ("S-95", "ink=divide "),
+        ("S-99", "ink=brightness "),
+        ("S-110", "angle_line=true"),
+        ("S-111", "density_by_gap=true"),
+        ("S-115", "ink=erase "),
+        ("S-116", "density=50 "),
     ];
+    // Hardness 100 (segment 5) is the default and prints nothing.
+    assert!(!text("S-67").contains("hardness"));
+    // Every ink-mode sample maps (none falls back to Normal with a note).
+    for id in (70..=99).map(|n| format!("S-{n}")) {
+        let sub = sample(&dir, &id);
+        assert!(sub.preset.ink.is_some(), "{id}");
+        assert!(
+            !sub.notes.iter().any(|n| n.to_string().contains("Ink")),
+            "{id}"
+        );
+    }
     for (id, want) in cases {
         let t = text(id);
         assert!(t.contains(want), "{id}: {t:?} lacks {want:?}");
@@ -71,7 +98,7 @@ fn samples_import_with_the_mapped_settings() {
             ids.push(n.split('_').next().unwrap_or_default().to_owned());
         }
     }
-    assert!(ids.len() >= 56);
+    assert!(ids.len() >= 98);
     for id in &ids {
         let _ = sample(&dir, id);
     }
@@ -94,6 +121,8 @@ fn samples_import_with_the_mapped_settings() {
         ("S-61", "2-Brush shape"),
         ("S-62", "Ribbon"),
         ("S-23", "Hardness"),
+        ("S-113", "size on screen"),
+        ("S-114", "At least 1 pixel"),
         ("S-01", "adjust by speed"),
     ] {
         assert!(reported(id, feature), "{id} should report {feature}");
