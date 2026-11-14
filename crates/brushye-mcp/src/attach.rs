@@ -159,6 +159,11 @@ impl Endpoint {
                     while !stop.load(Ordering::Relaxed) {
                         match listener.accept() {
                             Ok(conn) => {
+                                // BSD/macOS: an accepted socket inherits the listener's
+                                // non-blocking mode. Connections block (one thread each).
+                                if conn.set_nonblocking(false).is_err() {
+                                    continue;
+                                }
                                 let (tx, wake, connected, stop) = (
                                     tx.clone(),
                                     Arc::clone(&wake),
