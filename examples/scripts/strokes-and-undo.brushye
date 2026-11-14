@@ -1,0 +1,13 @@
+# Brush strokes with readable samples [x,y,pressure,t_µs;…], then undo and redo.
+# Run: brushye run examples/scripts/strokes-and-undo.brushye --png out.png --journal out.journal
+doc.new 400 300
+layer.new L2 name="Ink"
+# A hard round pen line whose size follows pressure (minimum 20 %).
+brush.stroke L2 color=#1a1a1a size=14 size_pressure=20 samples=[40,150,0.1,0;120,110,0.6,16000;200,150,1.0,32000;280,190,0.6,48000;360,150,0.1,64000]
+# A soft, low-opacity airbrush-like dab trail.
+brush.stroke L2 color=#d04040 size=60 hardness=1 opacity=40 gap=wide samples=[60,250,1,0;340,250,1,40000]
+?history
+history.undo
+?layer.pixel L2 x=200 y=250
+history.redo
+?layer.pixel L2 x=200 y=250

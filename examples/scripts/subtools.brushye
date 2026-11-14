@@ -1,0 +1,10 @@
+# Tool state as commands (D-018): make a sub tool, tune it, pick colours.
+# Tool commands are not journaled and not undoable; strokes carry their full settings.
+tool.select pen
+subtool.add name="Script liner" settings="size=6 aa=strong size_pressure=30"
+subtool.set opacity=90 stabilization=12
+color.set main color=#203040
+color.active main
+?subtool
+?color
+?tools

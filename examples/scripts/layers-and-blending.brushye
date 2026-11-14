@@ -1,0 +1,14 @@
+# Layers, fills and blending modes.
+# Run: brushye run examples/scripts/layers-and-blending.brushye --png out.png
+doc.new 400 300 dpi=350
+layer.new L1 name="Base"
+layer.fill L1 color=#3a6ea5
+layer.new L2 name="Glow" above=L1
+layer.fill L2 color=#ffb347
+layer.set L2 blend=screen opacity=60
+layer.new L3 name="Shade"
+layer.pixels L3 x=0 y=0 w=2 h=1 data=b64:AAAAgAAAAIA=
+layer.set L3 blend=multiply
+?layer.list
+?pixel x=200 y=150
+?doc.hash

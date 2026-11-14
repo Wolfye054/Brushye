@@ -118,6 +118,8 @@ crates/
     proven parts may later move into `brushye-app` or stay a crate (D-015).
   - `brushye-mcp` (M9), `brushye-sut` (M8), `brushye-clip` (M11). Keeping the importers
     separate makes the code that touches CSP formats easy to review against the clean-room rules.
+    *Note 2026-11-14:* `brushye-mcp` created for M9 (library core + `brushye-mcp` stdio binary;
+    depends on `brushye-command` and `brushye-format`, like the CLI). See `docs/mcp.md`.
   - `brushye-gpu`, if the wgpu renderer outgrows `brushye-app`.
   - Splitting `color`, `brush` or `render` out of `brushye-core` once it gets large or slow
     to compile. This is mechanical, because the module dependencies are already one-way.
@@ -442,7 +444,8 @@ crates/
 | `x11rb` | X11/Xwayland tablet backend (D-015) | Pure-Rust X11 client with XInput2; no C library needed |
 | `windows` | Windows Ink / WinTab backend (D-015) | Microsoft's official Win32 bindings |
 | `objc2`, `objc2-app-kit` | macOS tablet backend (D-015) | Maintained, type-safe AppKit bindings |
-| `rmcp` | MCP server (M9) | Official Rust MCP SDK |
+| `rmcp` | MCP server (M9) | Official Rust MCP SDK. 3.10 (MSRV 1.88), features `server` + `transport-io` only, no macros: tools are built from the command registry at runtime |
+| `tokio` (features `rt`, `macros`, `io-std`) | `brushye-mcp` only: the async runtime `rmcp` requires (added 2026-11-14, M9) | `rmcp` is built on tokio, so there is no alternative with it. Already in the lock file through the app's dependencies. The server runs on a current-thread runtime and does document work on its blocking pool |
 | `rusqlite` (feature `bundled`) | reading `.sut` (and later `.clip`) files, which are SQLite databases (M8, `specs/formats/sut.md`) | Approved by the maintainer 2026-11-13. Compiles the official SQLite C library (public domain) into Brushye, so no system library is needed. The second C dependency after zstd. Files are opened read-only and immutable with SQLite's defensive settings, and only SELECT is run. 0.42 needs Rust 1.89, so the workspace MSRV moved from 1.88 to 1.89 |
 | `insta` (dev) | golden tests for codecs and migrations | Snapshot review workflow |
 | `proptest` (dev) | property tests; print → parse round-trip fuzzing of the command codec (D-011) | Standard property-testing crate |
