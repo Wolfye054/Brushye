@@ -518,7 +518,8 @@ mod roundtrip {
                     layer,
                     above,
                     to: Some(Place::Top),
-                    into: None
+                    into: None,
+                    below: None,
                 }
             )),
             (

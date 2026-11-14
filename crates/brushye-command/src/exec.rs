@@ -714,11 +714,12 @@ fn edit(d: &mut Document, cmd: &Command, pressure_curve: &Curve) -> Result<(), E
         Command::LayerDelete(p) => {
             d.remove_layer(p.layer)?;
         }
-        Command::LayerMove(p) => match (p.above, p.to, p.into) {
-            (Some(a), None, None) => d.move_layer(p.layer, Some(a))?,
-            (None, None, Some(f)) => d.move_into(p.layer, f)?,
-            (None, Some(Place::Bottom), None) => d.move_layer(p.layer, None)?,
-            (None, Some(Place::Top), None) => {
+        Command::LayerMove(p) => match (p.above, p.to, p.into, p.below) {
+            (Some(a), None, None, None) => d.move_layer(p.layer, Some(a))?,
+            (None, None, Some(f), None) => d.move_into(p.layer, f)?,
+            (None, None, None, Some(b)) => d.move_below(p.layer, b)?,
+            (None, Some(Place::Bottom), None, None) => d.move_layer(p.layer, None)?,
+            (None, Some(Place::Top), None, None) => {
                 // Above the topmost top-level layer (a folder's entry is its topmost layer).
                 let top = d
                     .layers()
@@ -733,7 +734,7 @@ fn edit(d: &mut Document, cmd: &Command, pressure_curve: &Curve) -> Result<(), E
             }
             _ => {
                 return Err(ExecError(
-                    "layer.move needs exactly one of above=…, into=… or to=…".into(),
+                    "layer.move needs exactly one of above=…, below=…, into=… or to=…".into(),
                 ));
             }
         },

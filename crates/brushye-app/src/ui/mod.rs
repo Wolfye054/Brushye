@@ -177,6 +177,8 @@ pub struct UiState {
     pub prefs_open: bool,
     /// Window > Journal (Brushye), M9.
     pub journal: journal::JournalWindow,
+    /// Layer palette drag: where the dragged layer would land if released now (U-015).
+    pub layer_drop: Option<(brushye_command::core::LayerId, crate::app::MoveTo)>,
 }
 
 impl UiState {
@@ -223,6 +225,7 @@ impl UiState {
             about_open: false,
             prefs_open: false,
             journal: Default::default(),
+            layer_drop: None,
         }
     }
 

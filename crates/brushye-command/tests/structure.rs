@@ -96,6 +96,18 @@ fn build_query_undo_and_replay() {
         tree(&mut s),
         t(&[("L2", "L10"), ("L1", "L10"), ("L10", "-"), ("L3", "-")])
     );
+    // below=: directly under a layer, in its folder (U-015).
+    run(&mut s, "layer.move L3 below=L1");
+    assert_eq!(
+        tree(&mut s),
+        t(&[("L2", "L10"), ("L3", "L10"), ("L1", "L10"), ("L10", "-")])
+    );
+    assert!(s.run_line("layer.move L10 below=L2").is_err());
+    run(&mut s, "layer.move L3 below=L10");
+    assert_eq!(
+        tree(&mut s),
+        t(&[("L3", "-"), ("L2", "L10"), ("L1", "L10"), ("L10", "-")])
+    );
     run(&mut s, "layer.delete L10");
     assert_eq!(tree(&mut s), t(&[("L3", "-")]));
 }
@@ -141,6 +153,7 @@ fn json_form_of_new_commands() {
         "layer.set L2 clip=true",
         "layer.new L3 into=L4",
         "layer.move L3 into=L4",
+        "layer.move L3 below=L2",
     ] {
         let raw = match brushye_command::syntax::parse_line(line) {
             Ok(brushye_command::syntax::Line::Item(r)) => r,

@@ -141,6 +141,7 @@ params! {
         above: Option<LayerId> = opt "Place directly above this layer, in its folder",
         to: Option<Place> = opt "top or bottom (of the whole stack, top level)",
         into: Option<LayerId> = opt "Place at the top of this folder",
+        below: Option<LayerId> = opt "Place directly below this layer, in its folder",
     }
 }
 params! {

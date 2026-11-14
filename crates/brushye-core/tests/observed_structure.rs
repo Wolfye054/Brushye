@@ -176,6 +176,25 @@ fn l006_clipping() {
     );
 }
 
+/// L-006 run 3: a hidden clip base hides its clipped layers; a clipped layer with no base
+/// below it (bottom of the stack, or of a folder) draws unclipped.
+#[test]
+fn l006_hidden_and_missing_clip_base() {
+    let i = inputs();
+    exact(
+        &clip_doc(&i, |d| set(d, 2, |l| l.visible = false)),
+        "observed3/clip_hidden_base.png",
+    );
+    exact(
+        &clip_doc(&i, |d| set(d, 1, |l| l.clip = true)),
+        "observed3/clip_bottom_layer.png",
+    );
+    exact(
+        &clip_doc(&i, |d| ok(d.group(folder(4), LayerId(3)))),
+        "observed3/clip_bottom_of_folder.png",
+    );
+}
+
 /// Clip base in Multiply: CSP's output equals its own plain Multiply layer with the base's
 /// alpha (L-006 run 2), so the remaining error is L-002's open Multiply-with-partial-alpha
 /// rule: the same tolerance as there (max 2), and only on partially transparent pixels.

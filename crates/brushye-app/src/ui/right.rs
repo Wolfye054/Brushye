@@ -526,7 +526,9 @@ fn layers(app: &mut App, ui: &mut Ui, c: &Colors, body: Rect) {
                 false,
                 false,
             );
-            let enabled = layer.as_ref().is_some_and(|l| !l.locked);
+            let enabled = layer
+                .as_ref()
+                .is_some_and(|l| !l.locked && !clip_base_hidden(&doc, l.id));
             ui.add_enabled_ui(enabled, |ui| {
                 let blend = layer.as_ref().map_or(BlendMode::Normal, |l| l.blend);
                 egui::ComboBox::from_id_salt("layer-blend")
@@ -758,7 +760,8 @@ fn layers(app: &mut App, ui: &mut Ui, c: &Colors, body: Rect) {
     let list = Rect::from_min_max(pos2(body.left(), row2.bottom() + 1.0), body.max);
     widgets::fill(ui, list, c.body);
     let layers = palette_rows(&doc);
-    let mut drag_target: Option<(LayerId, usize)> = None;
+    let mut hover_drop: Option<(LayerId, crate::app::MoveTo)> = None;
+    let dragging = ui.ctx().dragged_id().is_some();
     widgets::area(ui, list, |ui| {
         egui::ScrollArea::vertical()
             .id_salt("layers")
@@ -772,32 +775,67 @@ fn layers(app: &mut App, ui: &mut Ui, c: &Colors, body: Rect) {
                 if let Some(p) = doc.paper {
                     paper_row(ui, c, p.0);
                 }
-                // Drag a row onto another to move it there.
+                // Drag a row onto another (U-015): a layer row's upper/lower half puts it
+                // above/below; a folder row's top quarter above it, middle half into it at the
+                // bottom, bottom quarter at the top of its contents (expanded) or below it
+                // (collapsed).
                 if let Some(dragged) = ui.ctx().dragged_id()
                     && let Some(&(_, id, _)) = rows.iter().find(|(r, _, _)| r.1 == dragged)
                     && let Some(pos) = ui.ctx().pointer_interact_pos()
                     && let Some(&(_, _, j)) = rows.iter().find(|(r, _, _)| r.0.contains(pos))
                 {
                     let rr = rows[j].0.0;
-                    ui.painter()
-                        .line_segment([rr.left_top(), rr.right_top()], Stroke::new(2.0, c.accent));
-                    if ui.input(|i| i.pointer.any_released()) {
-                        drag_target = Some((id, j));
+                    let t = &layers[j].layer;
+                    let f = (pos.y - rr.top()) / rr.height();
+                    use crate::app::MoveTo;
+                    let to = if t.is_folder() {
+                        if f < 0.25 {
+                            MoveTo::Above(t.id)
+                        } else if f < 0.75 {
+                            MoveTo::IntoBottom(t.id)
+                        } else if t.expanded {
+                            MoveTo::IntoTop(t.id)
+                        } else {
+                            MoveTo::Below(t.id)
+                        }
+                    } else if f < 0.5 {
+                        MoveTo::Above(t.id)
+                    } else {
+                        MoveTo::Below(t.id)
+                    };
+                    // A layer can't go onto itself or into its own folder tree.
+                    let valid = t.id != id && !doc.is_inside(t.id, id);
+                    if valid {
+                        let stroke = Stroke::new(2.0, c.accent);
+                        match to {
+                            MoveTo::IntoBottom(_) => {
+                                ui.painter().rect_stroke(
+                                    rr.shrink(1.0),
+                                    0.0,
+                                    stroke,
+                                    egui::StrokeKind::Inside,
+                                );
+                            }
+                            MoveTo::Above(_) => {
+                                ui.painter()
+                                    .line_segment([rr.left_top(), rr.right_top()], stroke);
+                            }
+                            _ => {
+                                ui.painter()
+                                    .line_segment([rr.left_bottom(), rr.right_bottom()], stroke);
+                            }
+                        }
+                        hover_drop = Some((id, to));
                     }
                 }
             });
     });
-    if let Some((id, j)) = drag_target {
-        let target = layers[j].layer.id;
-        if target != id {
-            // Rows are top-first: put the layer directly above the row it was dropped on.
-            app.exec(Command::LayerMove(commands::LayerMove {
-                layer: id,
-                above: Some(target),
-                to: None,
-                into: None,
-            }));
-        }
+    // egui ends the drag in the frame the button is released, so the target seen while
+    // dragging is kept and applied when the drag ends.
+    if dragging {
+        app.ui.layer_drop = hover_drop;
+    } else if let Some((id, to)) = app.ui.layer_drop.take() {
+        app.move_layer_to(id, to);
     }
 }
 
@@ -816,6 +854,24 @@ struct PaletteRow {
     /// `Some(true)`: clipped (red bar); `Some(false)`: clip set but off, because the base is
     /// a Through folder (grey bar, U-014 / L-006).
     clip: Option<bool>,
+}
+
+/// A clipped layer whose clip base is hidden isn't drawn either (L-006 run 3): CSP dims its
+/// eye and greys out its blend and opacity controls.
+fn clip_base_hidden(doc: &Document, id: LayerId) -> bool {
+    let Some(l) = doc.layer(id) else { return false };
+    if !l.clip {
+        return false;
+    }
+    let sibs = doc.children(l.parent);
+    let Some(i) = sibs.iter().position(|s| s.id == id) else {
+        return false;
+    };
+    sibs[..i]
+        .iter()
+        .rev()
+        .find(|b| !b.clip)
+        .is_some_and(|b| !b.visible && !(b.is_folder() && b.blend == BlendMode::Through))
 }
 
 /// The rows the Layer palette shows, top to bottom: every layer whose folders are all open,
@@ -899,7 +955,11 @@ fn layer_row(
             icons::EYE_SLASH
         },
         13.0,
-        if l.visible { c.icon } else { c.icon_dim },
+        if l.visible && !clip_base_hidden(doc, l.id) {
+            c.icon
+        } else {
+            c.icon_dim
+        },
     );
     if eye_resp.clicked() {
         app.exec(Command::LayerShow(commands::LayerShow {

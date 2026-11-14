@@ -82,6 +82,20 @@ pub enum Dialog {
     Notice(String),
 }
 
+/// Where a layer moves to (Layer Order, drag and drop; U-015).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MoveTo {
+    Above(LayerId),
+    Below(LayerId),
+    /// Into a folder, at the top of its contents.
+    IntoTop(LayerId),
+    /// Into a folder, at the bottom of its contents.
+    IntoBottom(LayerId),
+    /// The top or bottom of the whole stack (top level).
+    Top,
+    Bottom,
+}
+
 /// Actions that may need a "discard changes?" confirmation.
 #[derive(Clone, Debug)]
 pub enum Action {
@@ -621,42 +635,74 @@ impl App {
     }
 
     /// Layer order: 0 top, 1 up, 2 down, 3 bottom.
+    /// Move a layer to a place in the stack (one `layer.move` command).
+    pub(crate) fn move_layer_to(&mut self, layer: LayerId, to: MoveTo) {
+        let mut cmd = commands::LayerMove {
+            layer,
+            above: None,
+            to: None,
+            into: None,
+            below: None,
+        };
+        match to {
+            MoveTo::Above(t) => cmd.above = Some(t),
+            MoveTo::Below(t) => cmd.below = Some(t),
+            MoveTo::IntoTop(f) => cmd.into = Some(f),
+            MoveTo::IntoBottom(f) => {
+                // The bottom of a folder = below its bottom child; an empty folder: into it.
+                let bottom = self
+                    .doc()
+                    .and_then(|d| d.children(Some(f)).first().map(|l| l.id));
+                match bottom {
+                    Some(b) if b != layer => cmd.below = Some(b),
+                    Some(_) => return,
+                    None => cmd.into = Some(f),
+                }
+            }
+            MoveTo::Top => cmd.to = Some(commands::Place::Top),
+            MoveTo::Bottom => cmd.to = Some(commands::Place::Bottom),
+        }
+        self.exec(Command::LayerMove(cmd));
+    }
+
+    /// Layer > Layer Order (U-015): 0 Top, 1 Up, 2 Down, 3 Bottom. Up/Down step into an
+    /// expanded folder next to the layer and out of the layer's own folder at its ends, and
+    /// jump a collapsed folder as one item; Top/Bottom go to the whole stack's ends.
     pub(crate) fn move_active(&mut self, which: u8) {
         let (Some(d), Some(id)) = (self.doc(), self.session.active_layer()) else {
             return;
         };
-        let ids: Vec<LayerId> = d.layers().iter().map(|l| l.id).collect();
-        let Some(i) = ids.iter().position(|&x| x == id) else {
+        let Some(me) = d.layer(id) else { return };
+        let sibs: Vec<_> = d
+            .children(me.parent)
+            .into_iter()
+            .map(|l| (l.id, l.is_folder() && l.expanded))
+            .collect();
+        let Some(i) = sibs.iter().position(|(x, _)| *x == id) else {
             return;
         };
-        let cmd = match which {
-            0 => commands::LayerMove {
-                layer: id,
-                above: None,
-                to: Some(commands::Place::Top),
-                into: None,
+        let to = match which {
+            0 => MoveTo::Top,
+            3 => MoveTo::Bottom,
+            1 => match sibs.get(i + 1) {
+                Some(&(s, true)) => MoveTo::IntoBottom(s),
+                Some(&(s, false)) => MoveTo::Above(s),
+                None => match me.parent {
+                    Some(p) => MoveTo::Above(p),
+                    None => return,
+                },
             },
-            1 if i + 1 < ids.len() => commands::LayerMove {
-                layer: id,
-                above: Some(ids[i + 1]),
-                to: None,
-                into: None,
-            },
-            2 if i >= 2 => commands::LayerMove {
-                layer: id,
-                above: Some(ids[i - 2]),
-                to: None,
-                into: None,
-            },
-            2 | 3 if i > 0 => commands::LayerMove {
-                layer: id,
-                above: None,
-                to: Some(commands::Place::Bottom),
-                into: None,
+            2 => match i.checked_sub(1).map(|j| sibs[j]) {
+                Some((s, true)) => MoveTo::IntoTop(s),
+                Some((s, false)) => MoveTo::Below(s),
+                None => match me.parent {
+                    Some(p) => MoveTo::Below(p),
+                    None => return,
+                },
             },
             _ => return,
         };
-        self.exec(Command::LayerMove(cmd));
+        self.move_layer_to(id, to);
     }
 
     pub(crate) fn select_neighbour(&mut self, above: bool) {

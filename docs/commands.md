@@ -45,6 +45,7 @@ Move a layer above another layer, or to the top or bottom.
 | `above` | layer id | optional `key=` | Place directly above this layer, in its folder |
 | `to` | place (top\|bottom) | optional `key=` | top or bottom (of the whole stack, top level) |
 | `into` | layer id | optional `key=` | Place at the top of this folder |
+| `below` | layer id | optional `key=` | Place directly below this layer, in its folder |
 
 ### `layer.set` (v1, undoable)
 Set layer properties (name, opacity, blend, locks).

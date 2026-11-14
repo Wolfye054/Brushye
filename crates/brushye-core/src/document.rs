@@ -367,6 +367,25 @@ impl Document {
         Ok(())
     }
 
+    /// Move a layer (a folder with its contents) directly below `below`, into `below`'s
+    /// folder (U-015: drop on a row's lower half, Layer Order Down).
+    pub fn move_below(&mut self, id: LayerId, below: LayerId) -> Result<(), DocError> {
+        if below == id {
+            return Ok(());
+        }
+        self.index(id)?;
+        self.index(below)?;
+        if self.is_inside(below, id) {
+            return Err(DocError::IntoOwnSubtree(id));
+        }
+        let mut run = self.take_subtree(id)?;
+        let at = self.subtree(below)?.start;
+        let parent = self.layers[self.index(below)?].parent;
+        Self::set_parent(&mut run, parent);
+        self.layers.splice(at..at, run);
+        Ok(())
+    }
+
     /// Move a layer (with its contents) to the top of folder `folder`.
     pub fn move_into(&mut self, id: LayerId, folder: LayerId) -> Result<(), DocError> {
         self.folder(folder)?;
