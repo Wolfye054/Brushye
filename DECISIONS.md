@@ -578,3 +578,20 @@ crates/
      study shows what the files contain. Committing them for CI tests is decided after that.
 - **Alternatives:** the maintainer makes all ~60 files by hand (slow), or the files are
   committed from the start (risky before we know whether CSP embeds its own data in them).
+
+## D-021 Before 1.0, brush-engine fidelity fixes may change journal replay — ACCEPTED (2026-11-14)
+- **Date:** decided by the maintainer 2026-11-14 (M8, soft-tip fixes B-013/B-015).
+- **Decision:**
+  1. Until 1.0 the brush engine is still converging on CSP's behaviour. A fix that makes
+     Brushye draw more like CSP may change the pixels an existing journal redraws.
+  2. The golden brush hash (`crates/brushye-command/tests/session.rs`) is updated with each
+     such fix. The commit and the release notes say which brushes are affected.
+  3. Saved documents are unaffected. A `.brsh` file stores its pixels (D-014), so opening it
+     shows exactly what was saved; only replaying its journal from scratch can differ.
+  4. From 1.0 on, engine output is frozen. A later output change then needs versioning
+     (`brush.stroke` v2 replays with the new rules, v1 with the old).
+- **Alternatives:**
+  - Version `brush.stroke` for every fix now (the engine would carry every past rule).
+  - Freeze the engine now (the known differences from CSP would stay).
+- **Why:** exact CSP behaviour is a top priority, and alpha journals are few. Saved documents
+  keep their pixels either way.

@@ -26,6 +26,10 @@ Experiments (canvas layouts):
   softrow               B-013 soft-tip strokes on an 800x600 canvas: one straight full-pressure stroke
                         (100.5,200.5) -> (700.5,200.5), events every 2 px, 5 ms, and one dab at
                         (400.5, 420.5) (SOFTROW, SOFTROW_DAB)
+  thinsweep             B-014 run 2: 10x10 single dabs on an 800x800 canvas, press at
+                        (70.5 + 70 i + i/10, 70.5 + 70 j + j/10) (THINSWEEP_POINTS)
+  softdabs              B-015 four single dabs on an 800x600 canvas at quadrant centres with
+                        sub-pixel offsets (SOFTDABS)
   xcheck                M8 .sut cross-check on an 800x600 canvas: a pressure ramp P 0.1 -> 1 (y 100.5),
                         constant P = 0.5 (y 250.5), a full-pressure sine wave (y 430.5 +- 60) and one
                         full-pressure dab at (400.5, 555.5); events every 2 px, 5 ms (xcheck_strokes)
@@ -147,6 +151,10 @@ def xcheck_strokes():
 
 XCHECK_DAB = (400.5, 555.5)
 
+THINSWEEP_POINTS = [(70.5 + 70 * i + i / 10, 70.5 + 70 * j + j / 10) for j in range(10) for i in range(10)]
+
+SOFTDABS = [(200.5, 150.5), (600.8, 150.2), (200.3, 450.7), (600.5, 450.5)]
+
 SOFTROW = [(100.5 + 2 * i, 200.5) for i in range(301)]
 SOFTROW_DAB = (400.5, 420.5)
 
@@ -234,6 +242,12 @@ def main():
             for k in range(1, 61):
                 L += [f"move {sx + 2 * k:.2f} {sy:.2f} {p:.5f}", "wait 8"]
             L += ["wait 30", "up", "wait 80", "out", "wait 120"]
+    elif ex == "thinsweep":
+        for x, y in THINSWEEP_POINTS:
+            L += dab(ox, oy, x, y)
+    elif ex == "softdabs":
+        for x, y in SOFTDABS:
+            L += dab(ox, oy, x, y)
     elif ex == "softrow":
         L += stroke(ox, oy, SOFTROW, ms=5)
         L += dab(ox, oy, *SOFTROW_DAB)

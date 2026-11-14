@@ -111,7 +111,11 @@ impl Shape {
     /// Offset of the dab centre from the input point.
     pub fn centre_offset(&self) -> (f64, f64) {
         if self.hardness < HARDNESS_MAX {
-            (SOFT_CENTRE_OFFSET, SOFT_CENTRE_OFFSET)
+            if soft_offset(2.0 * self.r, self.aa, self.hardness) {
+                (SOFT_CENTRE_OFFSET, SOFT_CENTRE_OFFSET)
+            } else {
+                (0.0, 0.0)
+            }
         } else if self.thin() {
             (THIN_CENTRE_OFFSET_X, 0.0)
         } else {
@@ -153,6 +157,20 @@ impl Shape {
     }
 }
 
+/// Smallest size at which an anti-aliased soft dab of level 1..=4 is offset by +0.5 px (B-015,
+/// AA Middle: level 1 offset at 60 (B-012 X-04) and 64 but not 32, levels 2–3 at 128, level 4 never up to 128; the switch
+/// between the sampled sizes 8/16/32/64/128 is interim). With AA None every soft dab is offset
+/// (B-009).
+const SOFT_OFFSET_FROM_SIZE: [f64; 4] = [60.0, 128.0, 128.0, f64::INFINITY];
+
+/// Where level 4's AA ramp ends, px beyond the radius (B-015 fit: dab ink within 1–2 % at
+/// sizes 16–128, +10 % at 8; strokes within 3 %).
+const LEVEL4_AA_EDGE: f64 = 0.25;
+
+fn soft_offset(size: f64, aa: Aa, hardness: u8) -> bool {
+    aa == Aa::None || size >= SOFT_OFFSET_FROM_SIZE[usize::from(hardness.clamp(1, 4) - 1)]
+}
+
 /// Radius beyond which a dab of radius `r` covers nothing.
 pub fn reach(r: f64, hardness: u8) -> f64 {
     if hardness >= HARDNESS_MAX {
@@ -179,7 +197,15 @@ pub fn coverage(dx: f64, dy: f64, r: f64, aa: Aa, hardness: u8) -> f64 {
 /// Round-tip coverage at distance `d` from the centre (AA levels and soft tips).
 fn coverage_radial(d: f64, r: f64, aa: Aa, hardness: u8) -> f64 {
     if hardness < HARDNESS_MAX {
-        return soft(d, r, hardness);
+        let v = soft(d, r, hardness);
+        // Level 4 keeps a hard edge, and anti-aliasing applies to it: the profile is capped by
+        // the round tip's AA ramp (B-015: ink at size 8 went from +90 % to −5 %).
+        if hardness == HARDNESS_MAX - 1 && aa != Aa::None {
+            let re = r.max(1.0);
+            let w = aa.ramp().min(r).max(1.0);
+            return v.min(((re + LEVEL4_AA_EDGE - d) / w).clamp(0.0, 1.0));
+        }
+        return v;
     }
     if aa == Aa::None {
         return if d <= r { 1.0 } else { 0.0 };

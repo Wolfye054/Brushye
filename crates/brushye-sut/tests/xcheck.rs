@@ -176,7 +176,7 @@ fn importer_output_is_the_committed_presets() {
 const PINS: &[(&str, f64, f64)] = &[
     ("X-01", 3.5, 1.0),
     ("X-02", 1.0, 0.5),
-    ("X-03", 33.0, 1.0), // soft tip: spacing fixed (B-013); per-pixel profile interim (B-009)
+    ("X-03", 18.0, 1.0), // AA Strong level 3: per-pixel profile interim (B-015)
     ("X-04", 1.0, 0.8),
     ("X-05", 20.0, 2.0), // anti-aliased thin tip (engine gap)
     ("X-06", 17.0, 1.0), // anti-aliased thin tip (engine gap)
@@ -185,7 +185,7 @@ const PINS: &[(&str, f64, f64)] = &[
     ("X-09", 1.5, 0.2),
     ("X-10", 2.2, 0.6),
     ("X-11", 3.2, 1.0),
-    ("X-12", 60.0, 0.8), // soft tip: spacing fixed (B-013); per-pixel profile interim (B-009)
+    ("X-12", 3.0, 0.8),
 ];
 
 #[test]

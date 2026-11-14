@@ -383,11 +383,13 @@ mod golden {
         let ids: Vec<String> = l.doc.layers().iter().map(|x| x.id.to_string()).collect();
         assert_eq!(ids, ["L1", "L3", "L2"]);
         assert!(!l.doc.layers()[1].visible);
-        // Its embedded journal still replays to the same document. If this alone fails, the
-        // rendering of a command changed: that needs a new command version (D-011).
+        // Its embedded journal still replays. Before 1.0, engine fidelity fixes may change what
+        // it redraws (D-021: the saved pixels above are unaffected); this hash is updated with
+        // each such fix (2026-11-14: B-015 soft-dab offset). From 1.0 on, a change here needs
+        // a new command version (D-011).
         let mut r =
             Session::replay(&l.journal.unwrap_or_default()).unwrap_or_else(|e| panic!("{e}"));
-        assert_eq!(hash(&mut r), "fe80e51a0cdadafa");
+        assert_eq!(hash(&mut r), "5b40bbe6cd65fc70");
     }
 
     #[test]

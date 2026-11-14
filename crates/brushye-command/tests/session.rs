@@ -425,7 +425,8 @@ fn global_pressure_curve_is_journaled_applied_first_and_not_undoable() {
 fn golden_brush_hash_is_platform_independent() {
     let mut s = Session::new();
     run(&mut s, STROKE);
-    assert_eq!(q(&mut s, "?doc.hash"), "a9b915a093a070cf");
+    // Updated for engine fidelity fixes before 1.0 (D-021): B-015 soft-dab offset.
+    assert_eq!(q(&mut s, "?doc.hash"), "33d37c16b6046ffd");
 }
 
 #[test]
