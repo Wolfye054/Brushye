@@ -62,6 +62,39 @@ impl BrushPreset {
         }
     }
 
+    /// The `brush.stroke` command for this preset.
+    pub fn to_stroke(
+        &self,
+        layer: brushye_core::LayerId,
+        color: [u8; 3],
+        samples: crate::params::Samples,
+    ) -> BrushStroke {
+        BrushStroke {
+            layer,
+            color: brushye_core::Rgba8([color[0], color[1], color[2], 255]),
+            size: self.size,
+            aa: self.aa,
+            hardness: self.hardness,
+            opacity: self.opacity,
+            density: self.density,
+            ink: self.ink,
+            gap: self.gap,
+            density_by_gap: self.density_by_gap,
+            thickness: self.thickness,
+            direction: self.direction,
+            angle: self.angle,
+            angle_line: self.angle_line,
+            stabilization: self.stabilization,
+            size_pressure: self.size_pressure,
+            size_curve: self.size_curve.clone(),
+            opacity_pressure: self.opacity_pressure,
+            opacity_curve: self.opacity_curve.clone(),
+            density_pressure: self.density_pressure,
+            density_curve: self.density_curve.clone(),
+            samples,
+        }
+    }
+
     /// Engine settings with an ink colour; validated.
     pub fn settings(&self, color: [u8; 3]) -> Result<BrushSettings, String> {
         let pct = |name: &str, v: Option<u8>, default: f64| -> Result<f64, String> {
@@ -157,6 +190,18 @@ impl BrushPreset {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn to_stroke_round_trips_through_from_stroke() {
+        let p = BrushPreset::from_text("size=9 hardness=2 ink=erase stabilization=4")
+            .unwrap_or_else(|e| unreachable!("{e}"));
+        let st = p.to_stroke(
+            brushye_core::LayerId(3),
+            [1, 2, 3],
+            crate::params::Samples(vec![]),
+        );
+        assert_eq!(BrushPreset::from_stroke(&st), p);
+    }
 
     #[test]
     fn text_and_json_round_trip() {

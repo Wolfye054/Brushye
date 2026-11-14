@@ -156,6 +156,11 @@ impl Session {
         s
     }
 
+    /// Number of journaled commands (cheap; for "unsaved changes" tracking).
+    pub fn journal_len(&self) -> usize {
+        self.journal.len()
+    }
+
     /// Content hash of the base document, if the session was opened from one.
     pub fn base_hash(&self) -> Option<u64> {
         self.base
