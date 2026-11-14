@@ -52,6 +52,23 @@ Results, 131 072 px each:
   - The Layer palette shows the clip bar **grey instead of red** (U-014).
   - This corrects the manual note "treated as Normal" (docs/research).
 
+## Run 3 (2026-11-14): hidden base, no base
+Method: automated-Wine (Xvfb :77). Data: `data/observed3/clip_{hidden_base,bottom_layer,
+bottom_of_folder}.png`. Setup: base, `top_alpha Copy`, `top Copy` (clipped), as in run 2.
+
+- `clip_hidden_base`: the clip base (top_alpha Copy) is hidden. The clipped layer is **not
+  drawn either**: the export equals base alone (0 px differ).
+  - In the Layer palette the clipped layer's eye is dimmed. While it is selected, the blend
+    and opacity controls are greyed out.
+- `clip_bottom_layer`: Clip to Layer Below is **available on the bottom layer**. With no layer
+  below it, the layer draws **normally**: the export equals the unclipped stack.
+  - Its clip bar is **grey**.
+- `clip_bottom_of_folder`: a clipped layer at the bottom of a folder (top Copy alone in
+  Folder 1, with top_alpha below the folder) is **not clipped**: the export equals the
+  unclipped stack. The base is looked for only among its siblings in the same folder.
+  - Its bar is grey.
+  - Create folder and insert layer (Ctrl+G) keeps the layer's clip setting.
+
 ## Open questions
 - Lock transparent pixels: the colour rule at the anti-aliased stroke edge (expected lerp by
   coverage; not verified because the coverage isn't known independently).
